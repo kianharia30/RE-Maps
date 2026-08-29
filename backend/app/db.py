@@ -35,6 +35,16 @@ async def open_async_pool() -> AsyncConnectionPool:
             min_size=s.db_pool_min,
             max_size=s.db_pool_max,
             open=False,
+            # Validate a connection before handing it out. Without this the
+            # pool keeps serving sockets that died when PostgreSQL restarted,
+            # and every request fails with "server closed the connection
+            # unexpectedly" until the pool happens to recycle them. A restart
+            # of the database should be invisible to the API.
+            check=AsyncConnectionPool.check_connection,
+            # Recycle idle connections so a long-lived process does not hold
+            # sockets open indefinitely.
+            max_idle=300,
+            reconnect_timeout=30,
             kwargs={
                 "row_factory": dict_row,
                 "options": f"-c statement_timeout={s.db_statement_timeout_ms}",
@@ -92,6 +102,7 @@ def sync_pool() -> ConnectionPool:
     if _sync_pool is None:
         _sync_pool = ConnectionPool(
             _conninfo(), min_size=1, max_size=4, open=True,
+            check=ConnectionPool.check_connection,
             kwargs={"row_factory": dict_row},
         )
     return _sync_pool
