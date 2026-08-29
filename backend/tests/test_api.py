@@ -100,6 +100,60 @@ class TestSources:
 
 
 @pytest.mark.db
+class TestPostcodeSearch:
+    """UK postcodes resolve from our own gazetteer, not the general geocoder.
+
+    Nominatim's free-text search for "MK9 2AB" returned a street in Brazil at
+    latitude -9.47; a postcode-shaped query must never be answered that way.
+    """
+
+    def test_a_real_postcode_resolves_to_the_right_place(self, client):
+        resp = client.get("/api/search", params={"q": "SW1A 1AA", "limit": 3})
+        assert resp.status_code == 200
+        results = resp.json()
+        assert results, "a valid postcode returned nothing"
+        top = results[0]
+        assert top["kind"] == "postcode"
+        assert top["country_iso2"] == "GB"
+        # Westminster, to within a kilometre or so.
+        assert 51.4 < top["latitude"] < 51.6
+        assert -0.25 < top["longitude"] < 0.0
+
+    def test_case_and_spacing_do_not_matter(self, client):
+        a = client.get("/api/search", params={"q": "SW1A 1AA"}).json()[0]
+        b = client.get("/api/search", params={"q": "sw1a1aa"}).json()[0]
+        assert (round(a["latitude"], 4), round(a["longitude"], 4)) == (
+            round(b["latitude"], 4), round(b["longitude"], 4)
+        )
+
+    def test_an_outcode_resolves_to_its_district(self, client):
+        results = client.get("/api/search", params={"q": "MK9"}).json()
+        assert results and results[0]["kind"] == "postcode"
+        assert results[0]["bbox"] is not None, "an outcode should carry an extent"
+        assert 51.8 < results[0]["latitude"] < 52.3
+
+    def test_a_nonexistent_postcode_returns_nothing_rather_than_a_wrong_place(
+        self, client
+    ):
+        """MK9 2AB is not a real postcode. Returning no results is correct;
+        returning a plausible-looking foreign street is not."""
+        results = client.get("/api/search", params={"q": "MK9 2AB"}).json()
+        for r in results:
+            assert (r["country_iso2"] or "") == "GB", (
+                f"a UK-postcode-shaped query returned {r['display_name']!r}"
+            )
+
+    def test_coverage_flag_is_region_aware(self, client):
+        """Scotland is in the UK but has no transaction data, so a Scottish
+        postcode must not be flagged as covered."""
+        english = client.get("/api/search", params={"q": "SW1A 1AA"}).json()[0]
+        scottish = client.get("/api/search", params={"q": "EH1 1AA"}).json()[0]
+        assert english["has_property_data"] is True
+        assert scottish["has_property_data"] is False
+        assert "Scotland" in (scottish["coverage_note"] or "")
+
+
+@pytest.mark.db
 class TestSupportedMarketEndToEnd:
     """A covered location must return real, correctly-typed prices."""
 
