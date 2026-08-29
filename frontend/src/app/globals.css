@@ -1,0 +1,165 @@
+/* MapLibre first: it ships `.maplibregl-map { position: relative }`, which has
+   the same specificity as Tailwind's `.absolute`. Loading it before Tailwind
+   means our utility wins and the map container keeps its `inset-0` box. */
+@import "maplibre-gl/dist/maplibre-gl.css";
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens. The reference is a consumer map product: a light, quiet
+   basemap with a small number of high-contrast floating surfaces on top.
+   Everything here exists to keep the map the loudest thing on screen.
+   --------------------------------------------------------------------------- */
+@theme {
+  --font-sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  /* Floating-surface elevation, tuned to read as "hovering above the map"
+     without the grey haze a single large shadow produces. */
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.10),
+    0 12px 32px rgb(0 0 0 / 0.06);
+  --shadow-float-lg: 0 1px 2px rgb(0 0 0 / 0.07), 0 8px 24px rgb(0 0 0 / 0.12),
+    0 24px 56px rgb(0 0 0 / 0.10);
+  --shadow-marker: 0 1px 2px rgb(0 0 0 / 0.20), 0 3px 8px rgb(0 0 0 / 0.16);
+
+  /* Price-type accents. Each of the four categories gets its own hue so they
+     can never be mistaken for one another at a glance (§2). */
+  --color-sold: #0f172a;        /* recorded transaction — the most solid ink */
+  --color-estimate: #1d4ed8;    /* current estimate */
+  --color-historical: #7c3aed;  /* historical estimate */
+  --color-forecast: #c2410c;    /* forecast */
+  --color-regional: #0f766e;    /* area statistic */
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+html, body { height: 100%; width: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: #0f172a;
+  background: #eef1f5;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Hide MapLibre's own chrome; we render our own attribution bar so it can sit
+   in the layout properly and include the data licences, not just the basemap. */
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-bottom-left { display: none !important; }
+.maplibregl-canvas:focus { outline: none; }
+
+/* The app shell is pinned with `position: fixed` rather than sized in `dvh`/
+   `dvw`. Dynamic viewport units are the natural choice for a full-screen map,
+   but they resolve to 0 in some embedded/headless contexts (WebViews, preview
+   iframes), which silently collapses the whole layout. `fixed inset-0` is
+   exactly as correct and has no such failure mode. */
+.rm-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* The map container must always fill its positioned parent. Stated explicitly
+   so no future stylesheet-ordering change can collapse it to zero height. */
+.rm-map-root,
+.rm-map-root.maplibregl-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- price markers -------------------------------------------------------- */
+
+.rm-marker {
+  /* MapLibre positions markers with `.maplibregl-marker { position: absolute;
+     top: 0; left: 0 }` and drives them via a transform. Because this
+     stylesheet loads after MapLibre's, we must restate those properties
+     rather than rely on them: declaring `position: relative` here made every
+     marker a full-width block whose pill rendered off-screen. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  /* Anchor the pin tip on the coordinate. */
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
+.rm-marker__pill {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: var(--shadow-marker);
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 140ms;
+}
+
+.rm-marker:hover .rm-marker__pill { transform: translateY(-1px) scale(1.045); }
+
+.rm-marker--selected .rm-marker__pill {
+  background: #0f172a;
+  color: #fff;
+  transform: translateY(-1px) scale(1.06);
+}
+
+.rm-marker__pin { margin-top: 1px; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.28)); }
+
+/* Aggregated (area) markers read as a chip, not a dropped pin, because they
+   describe a district rather than a point. */
+.rm-marker--area .rm-marker__pill {
+  font-size: 12.5px;
+  padding: 6px 10px 6px 10px;
+}
+.rm-marker--area .rm-marker__sub {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.55;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+/* --- scrollbars in the side panel ---------------------------------------- */
+.rm-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.rm-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.rm-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1; border-radius: 999px; border: 2px solid transparent;
+  background-clip: content-box;
+}
+.rm-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* --- motion -------------------------------------------------------------- */
+@keyframes rm-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.rm-animate-in { animation: rm-fade-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes rm-slide-in-right {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: none; }
+}
+.rm-panel-in { animation: rm-slide-in-right 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes rm-slide-up-sheet {
+  from { transform: translateY(100%); }
+  to   { transform: none; }
+}
+.rm-sheet-in { animation: rm-slide-up-sheet 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rm-animate-in, .rm-panel-in, .rm-sheet-in { animation: none; }
+  .rm-marker__pill { transition: none; }
+}

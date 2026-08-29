@@ -1,0 +1,34 @@
+# --- secrets ---------------------------------------------------------------
+.env
+.env.local
+*.pem
+
+# --- python ----------------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- node / next -----------------------------------------------------------
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# --- data ------------------------------------------------------------------
+# Raw source files are large (2.6 GB+) and are re-downloadable via
+# `make data-download`; they are never committed.
+data/raw/
+data/work/
+*.csv
+*.csv.gz
+*.csv.zip
+
+# --- model artefacts -------------------------------------------------------
+backend/artifacts/
+
+# --- os --------------------------------------------------------------------
+.DS_Store
