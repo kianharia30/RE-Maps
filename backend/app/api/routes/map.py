@@ -340,7 +340,31 @@ async def map_prices(
     # Region-aware: a sub-national row that records an absence must win over
     # the country-wide entry, so Scotland is not served England's dataset.
     entry = await coverage_mod.lookup(country, jurisdiction.region_code)
+
     if not coverage_mod.is_usable(entry):
+        # The jurisdiction is resolved from the viewport CENTRE, which is the
+        # right question for one place and the wrong one for a continent. A
+        # view of Europe centred a few degrees off can land on Switzerland —
+        # which Eurostat's series excludes — and that single point used to
+        # blank a map showing 27 countries we do cover.
+        #
+        # So an uncovered centre is not fatal to an area tier: ask the data
+        # whether anything in view is covered, and only report the absence if
+        # nothing is. The property tier keeps the strict gate, because there
+        # the centre really is the subject of the request.
+        #
+        # CRITICAL: only when there is no registry row at all. A row that
+        # exists and records an absence — Scotland, Northern Ireland — must
+        # never fall through to this, because the countries in view would
+        # include the UK, and Scotland would be served England and Wales's
+        # median. That is precisely the substitution those rows were written to
+        # prevent, and an earlier version of this fallback did exactly it.
+        if tier is not MapTier.PROPERTY and entry is None:
+            spanning = await _multi_country_area_tier(
+                box, tier, year, segment, is_future, today
+            )
+            if spanning is not None:
+                return spanning
         return MapResponse(
             status=DataStatus.UNSUPPORTED_LOCATION,
             # Prefer the registry's specific reason over the generic sentence.
@@ -397,6 +421,105 @@ async def map_prices(
 
 
 # --- tier implementations ---------------------------------------------------
+
+
+async def _multi_country_area_tier(
+    box: BoundingBox,
+    tier: MapTier,
+    year: int,
+    segment: str,
+    is_future: bool,
+    today: date,
+) -> MapResponse | None:
+    """Country-level figures for every covered country in view.
+
+    Used when the viewport centre is in a country we do not cover but the
+    viewport itself spans countries we do. Returns None when nothing in view is
+    covered, so the caller can report the absence properly.
+
+    Country level only, deliberately: a viewport this wide is showing whole
+    countries, and reaching for sub-national data would require a jurisdiction
+    we have just established is the wrong one to ask about.
+    """
+    if is_future:
+        # A future year needs a price level to project, and the countries
+        # reachable this way are index-only.
+        return None
+
+    row = await fetch_one(
+        """
+        SELECT max(year) AS y FROM area_stats
+        WHERE area_level = 'country' AND segment = %s AND year <= %s
+        """,
+        (segment, year),
+    )
+    stats_year = (row or {}).get("y") or year
+
+    rows = await fetch_all(
+        _COUNTRY_AREA_SQL,
+        {
+            "segment": segment, "year": stats_year,
+            "w": box.west, "s": box.south, "e": box.east, "n": box.north,
+            "limit": limit_for_tier(tier),
+        },
+    )
+    if not rows:
+        return None
+
+    areas: list[AreaStat] = []
+    for r in rows:
+        growth = r.get("stored_growth")
+        has_level = r["median_price"] is not None
+        if not has_level and growth is None:
+            continue
+        areas.append(
+            AreaStat(
+                area_level=r["area_level"], area_code=r["area_code"],
+                area_name=r["area_name"], latitude=r["latitude"],
+                longitude=r["longitude"], year=r["year"],
+                median_price=(
+                    round(r["median_price"]) if has_level else None
+                ),
+                p25_price=r["p25_price"], p75_price=r["p75_price"],
+                median_price_per_sqm=r["median_price_per_sqm"],
+                transaction_count=r["transaction_count"],
+                currency=r["currency"],
+                growth_1y_pct=(round(float(growth), 1) if growth is not None else None),
+                precision_level=precision_for_tier(tier),
+                basis=r.get("basis") or "TRANSACTIONS",
+                index_value=r.get("index_value"),
+                has_price_level=has_level,
+            )
+        )
+    if not areas:
+        return None
+
+    # Each marker carries its own currency; a single top-level one would be
+    # meaningless across a continent, so it is left unset.
+    attributions = await _attributions_for_countries(
+        [r["area_code"] for r in rows]
+    )
+    return MapResponse(
+        status=DataStatus.OK, tier=tier, year=year, data_year=stats_year,
+        is_future=is_future, is_historical=year < today.year,
+        currency=None, areas=areas,
+        truncated=len(rows) >= limit_for_tier(tier),
+        attributions=attributions,
+    )
+
+
+async def _attributions_for_countries(area_codes: list[str]) -> list[str]:
+    """Attributions for the sources actually behind the returned rows."""
+    rows = await fetch_all(
+        """
+        SELECT DISTINCT ds.attribution
+        FROM area_stats a
+        JOIN data_sources ds ON ds.key = a.source_key
+        WHERE a.area_code = ANY(%s::text[]) AND ds.attribution IS NOT NULL
+        """,
+        (area_codes,),
+    )
+    return [r["attribution"] for r in rows]
 
 
 async def _area_tier(

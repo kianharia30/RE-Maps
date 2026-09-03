@@ -232,6 +232,83 @@ class TestUnsupportedLocationsReturnNoPrices:
 
 
 @pytest.mark.db
+class TestAWideViewportDoesNotLeakAcrossBorders:
+    """The viewport centre gates the request, and a continent has many centres.
+
+    A view of Europe centred a few degrees off lands on Switzerland, which
+    Eurostat's series excludes. That single point used to blank a map showing
+    27 countries we do cover, so an area tier now asks the data instead.
+
+    The danger in relaxing that gate is substitution: the countries in view
+    include the UK, so a viewport over Scotland must NOT come back with England
+    and Wales's median. An earlier version of the fallback did exactly that.
+    """
+
+    def _get(self, client, bbox, zoom, year=2025):
+        resp = client.get(
+            "/api/map/prices",
+            params={"bbox": bbox, "zoom": zoom, "year": year},
+        )
+        assert resp.status_code == 200
+        return resp.json()
+
+    # (name, bbox, zoom) — centre is in a country with no registry row.
+    SPANNING = [
+        ("centre in Switzerland", "-8.5,40.5,24.5,54.5", 4.2),
+        ("centre in the Atlantic", "-20,35,15,58", 4),
+        ("centre in Belarus", "18,48,38,60", 4.5),
+    ]
+
+    @pytest.mark.parametrize("name,bbox,zoom", SPANNING)
+    def test_covered_countries_in_view_are_still_served(
+        self, client, name, bbox, zoom
+    ):
+        body = self._get(client, bbox, zoom)
+        assert body["status"] == "OK", f"{name}: {body.get('message')}"
+        assert body["areas"], f"{name} returned nothing despite covered countries"
+        assert body["properties"] == []
+        # Every marker must sit at country level and name a real country.
+        for area in body["areas"]:
+            assert area["area_level"] == "country"
+            assert area["area_name"]
+
+    @pytest.mark.parametrize("name,bbox,zoom", SPANNING)
+    def test_no_marker_is_attributed_to_an_uncovered_country(
+        self, client, name, bbox, zoom
+    ):
+        """Switzerland and Belarus must not appear, even when centred on."""
+        body = self._get(client, bbox, zoom)
+        names = {a["area_name"] for a in body["areas"]}
+        for uncovered in ("Switzerland", "Belarus", "Ukraine", "Russia"):
+            assert uncovered not in names, (
+                f"{uncovered} has no data but received a figure"
+            )
+
+    # A registered absence must refuse outright, never borrow a neighbour's
+    # figure — including when the viewport also spans England.
+    ABSENCES = [
+        ("Scotland", "-4.5,55.5,-2.5,56.5", 8),
+        ("Scotland spanning England", "-6,54,0,59", 6),
+        ("Northern Ireland", "-6.5,54.3,-5.5,54.9", 8),
+        ("Northern Ireland spanning Wales", "-7,52.5,-4,55.5", 6),
+    ]
+
+    @pytest.mark.parametrize("name,bbox,zoom", ABSENCES)
+    def test_a_registered_absence_is_never_given_a_neighbours_figure(
+        self, client, name, bbox, zoom
+    ):
+        body = self._get(client, bbox, zoom)
+        assert body["status"] == "UNSUPPORTED_LOCATION", (
+            f"{name} was served data: {body['areas'][:1]}"
+        )
+        assert body["areas"] == []
+        assert body["properties"] == []
+        # And it must say why, naming the jurisdiction.
+        assert body["message"]
+        assert "not currently available" in body["message"]
+
+
+@pytest.mark.db
 class TestTheRegistryListingSeparatesAbsenceFromCoverage:
     """`supported` must not contain places we know have no data.
 
