@@ -341,6 +341,47 @@ computed from ineligible transactions).
 
 ---
 
+## Deploying to a hosted database
+
+The full database is **7.7 GB**. Every free Postgres tier is around 0.5–1 GB, so
+the two do not reconcile — and the data splits cleanly along that line:
+
+| Layer | Size | What it powers |
+|---|---|---|
+| **Map** — boundaries, official indices, precomputed area aggregates | ~300–460 MB | the whole world map, all 31 jurisdictions, every area zoom |
+| **Sales** — 6M transactions, 5.5M dwellings, 2.6M postcode centroids | ~7.3 GB | individual property markers, postcode search, valuations |
+
+[`backend/cloud_sync.py`](backend/cloud_sync.py) copies whichever you ask for:
+
+```bash
+export CLOUD_DATABASE_URL='postgresql://...'   # from your provider
+cd backend && .venv/bin/python cloud_sync.py --profile lean --dry-run
+```
+
+| Profile | Target size | Trade-off |
+|---|---|---|
+| `lean` | **296 MB** | fits a 500 MB free tier with headroom. UK area figures stop at postcode district (~z11) and index history starts at 1995. |
+| `map` | 464 MB | fits 500 MB with none to spare. UK figures reach postcode sector (~z14); full index history, so forecasts keep their long-run skill. |
+| `full` | 7.7 GB | everything. Needs a paid tier. |
+
+The tool needs PostGIS on the target, streams every table with `COPY` (it never
+writes a temp dump — the machine this was built on had under 2 GB free), and
+reads the target URL only from the environment, so a password never reaches a
+command line or a log.
+
+**A map-only deployment rewrites its own coverage registry.** Copied verbatim,
+the deployed API would advertise `transaction_level_data: true` for England &
+Wales and France and then return nothing — claiming data it does not hold. So
+the sync sets those rows to what is actually deployed, and a request for an
+individual dwelling answers:
+
+> Individual property prices are not available here. England and Wales is
+> covered by official area statistics only — zoom out to see them.
+
+Verified by running a real API against a `lean` target: 27 countries at
+continental zoom, real UK district and outcode medians, and individual-dwelling
+requests refused with the message above.
+
 ## Limitations, stated plainly
 
 0. **29 of the 31 supported jurisdictions have no price level.** They are
