@@ -106,6 +106,28 @@ def tier_for_zoom(zoom: float) -> MapTier:
     return MapTier.WORLD
 
 
+# Coarser levels to try when a tier's own level has no rows for a viewport.
+#
+# Data granularity is wildly uneven between jurisdictions: England has postcode
+# sectors, France has communes, the United States has states, and the 30
+# countries covered only by Eurostat have nothing below national level. Rather
+# than configure a bespoke ladder for each, the map walks this chain until it
+# finds real rows, and reports the level it actually used.
+COARSENING_CHAIN: tuple[str, ...] = (
+    "street", "postcode", "sector", "outcode", "district", "county",
+    "state", "country",
+)
+
+
+def coarser_levels(level: str) -> list[str]:
+    """Levels at or coarser than `level`, in the order to try them."""
+    try:
+        start = COARSENING_CHAIN.index(level)
+    except ValueError:
+        return [level, "country"]
+    return list(COARSENING_CHAIN[start:])
+
+
 def area_level_for_tier(tier: MapTier, country_iso2: str | None = None) -> str | None:
     """The `area_stats.area_level` that serves this tier, or None if the tier is
     answered live from the transactions table."""

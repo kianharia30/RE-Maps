@@ -190,9 +190,11 @@ class TestIngestedDataIntegrity:
         from app.db import sync_fetch_all
         from ingest.area_stats import TIER_SQL
 
+        # Index-derived rows have no disclosed sample size, so the rule
+        # applies to transaction-derived medians only.
         rows = sync_fetch_all(
             "SELECT area_level, min(transaction_count) AS smallest "
-            "FROM area_stats GROUP BY 1"
+            "FROM area_stats WHERE basis = 'TRANSACTIONS' GROUP BY 1"
         )
         for row in rows:
             expected = TIER_SQL.get(row["area_level"], (None, None, 1))[2]

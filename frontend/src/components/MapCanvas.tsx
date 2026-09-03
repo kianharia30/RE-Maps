@@ -1,7 +1,7 @@
 "use client";
 
 import maplibregl, { type LngLatBoundsLike, type Map as MlMap } from "maplibre-gl";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatCompact } from "@/lib/currency";
 import type { AreaStat, MapResponse, PropertySummary } from "@/types/api";
@@ -51,7 +51,13 @@ export default function MapCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  // Map readiness is STATE, not just a ref. A ref does not trigger a
+  // re-render, so if the first map payload arrived before the style finished
+  // loading, the marker effect bailed out on `readyRef.current === false` and —
+  // because `data` never changed again — never ran a second time. The result
+  // was a map that had loaded its data but silently drew no markers.
   const readyRef = useRef(false);
+  const [ready, setReady] = useState(false);
 
   // Handlers are read through a ref so the map is created exactly once and
   // never torn down when a parent re-render produces new closures.
@@ -106,8 +112,17 @@ export default function MapCanvas({
       handlers.current.onViewChange(bbox, map.getZoom(), [c.lng, c.lat]);
     };
 
-    map.on("load", () => {
+    // Readiness is keyed on `style.load`, not `load`.
+    //
+    // `load` fires only once the style AND the initial tiles have loaded, and
+    // a container that is momentarily zero-sized has no tiles to load, so
+    // `load` may never fire at all — leaving markers permanently unrendered.
+    // `style.load` fires as soon as the style is parsed, which is the actual
+    // precondition for adding markers and layers.
+    const onStyleReady = () => {
+      if (readyRef.current) return;
       readyRef.current = true;
+      setReady(true);
       // Heatmap source is created empty and fed later, so toggling modes never
       // has to add/remove layers mid-interaction.
       map.addSource("rm-heat", {
@@ -154,7 +169,12 @@ export default function MapCanvas({
         }
         emit();
       }
-    });
+    };
+
+    map.on("style.load", onStyleReady);
+    // Belt and braces: if the style was already parsed before the listener
+    // attached, `style.load` will not fire again.
+    if (map.isStyleLoaded()) onStyleReady();
 
     map.on("moveend", emit);
     map.on("zoomend", emit);
@@ -183,6 +203,7 @@ export default function MapCanvas({
       map.remove();
       mapRef.current = null;
       readyRef.current = false;
+      setReady(false);
     };
   }, []);
 
@@ -258,7 +279,7 @@ export default function MapCanvas({
         existing.delete(key);
       }
     }
-  }, [data, mode, selectedPropertyId, year]);
+  }, [data, mode, selectedPropertyId, year, ready]);
 
   /* --- heatmap ------------------------------------------------------------ */
   useEffect(() => {
@@ -277,6 +298,8 @@ export default function MapCanvas({
       ...data.areas.map((a) => ({
         lon: a.longitude,
         lat: a.latitude,
+        // `median_price` is null for index-only areas; the filter below drops
+        // them rather than letting a missing price read as zero.
         value:
           heatmapMetric === "median_price"
             ? a.median_price
@@ -307,7 +330,7 @@ export default function MapCanvas({
       })),
     });
     map.setLayoutProperty("rm-heat-layer", "visibility", "visible");
-  }, [data, mode, heatmapMetric]);
+  }, [data, mode, heatmapMetric, ready]);
 
   return <div ref={containerRef} className="rm-map-root" aria-label="Property price map" />;
 }
@@ -391,13 +414,32 @@ function buildAreaMarker(a: AreaStat, onClick: () => void): maplibregl.Marker {
   const pill = document.createElement("div");
   pill.className = "rm-marker__pill";
 
+  // An area covered only by an official index has NO price level — an index
+  // measures change, not value. Showing a growth rate is the honest thing;
+  // deriving a price from an index would be inventing one.
+  const growth =
+    a.growth_1y_pct != null
+      ? `${a.growth_1y_pct > 0 ? "+" : ""}${a.growth_1y_pct.toFixed(1)}%`
+      : null;
+
   const value = document.createElement("span");
-  value.textContent = formatCompact(a.median_price, a.currency);
+  if (a.has_price_level && a.median_price != null) {
+    value.textContent = formatCompact(a.median_price, a.currency);
+  } else {
+    value.textContent = growth ?? "—";
+    // Growth-only markers are visually distinct so they cannot be mistaken
+    // for a price at a glance.
+    pill.classList.add("rm-marker__pill--growth");
+  }
   pill.appendChild(value);
 
   const sub = document.createElement("span");
   sub.className = "rm-marker__sub";
-  sub.textContent = a.is_forecast ? `${a.area_name} · forecast` : a.area_name;
+  sub.textContent = a.is_forecast
+    ? `${a.area_name} · forecast`
+    : a.has_price_level
+      ? a.area_name
+      : `${a.area_name} · per year`;
   pill.appendChild(sub);
 
   applyTint(pill, a.is_forecast ? "FORECAST" : "REGIONAL_STATISTIC", false);
@@ -407,7 +449,9 @@ function buildAreaMarker(a: AreaStat, onClick: () => void): maplibregl.Marker {
   el.setAttribute("tabindex", "0");
   el.setAttribute(
     "aria-label",
-    `${a.area_name}: median ${formatCompact(a.median_price, a.currency)} from ${a.transaction_count} sales in ${a.year}. Zoom in.`,
+    a.has_price_level && a.median_price != null
+      ? `${a.area_name}: median ${formatCompact(a.median_price, a.currency)} from ${a.transaction_count} sales in ${a.year}. Zoom in.`
+      : `${a.area_name}: house prices changed ${growth ?? "an unknown amount"} in ${a.year}, from an official index. No price level is published. Zoom in.`,
   );
   const activate = (e: Event) => {
     e.stopPropagation();

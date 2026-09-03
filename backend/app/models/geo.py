@@ -85,13 +85,20 @@ class AreaStat(BaseModel):
     latitude: float
     longitude: float
     year: int
-    median_price: float
+    # NULL for areas covered only by an official index. An index measures
+    # change, not level, so there is no price to report — the frontend renders
+    # a growth figure instead of inventing one.
+    median_price: float | None = None
     p25_price: float | None = None
     p75_price: float | None = None
     median_price_per_sqm: float | None = None
     transaction_count: int
     currency: str
     precision_level: PrecisionLevel
+    # What stands behind the figure: real recorded sales, or an official index.
+    basis: str = "TRANSACTIONS"
+    index_value: float | None = None
+    has_price_level: bool = True
     # The span of sales the median was computed over. Equal to `year` for the
     # precomputed tiers; a multi-year window for the live street/postcode tiers,
     # which are too sparse to support a single-year median.
@@ -111,6 +118,11 @@ class MapResponse(BaseModel):
     message: str | None = None
     tier: MapTier
     year: int
+    # The year the figures actually come from. Differs from `year` when the
+    # requested year is absent from the data and the nearest one was used, or
+    # when a future year is projected from the latest observed year. The UI
+    # states this rather than letting the timeline imply a year we do not hold.
+    data_year: int | None = None
     is_future: bool = False
     is_historical: bool = False
     currency: str | None = None

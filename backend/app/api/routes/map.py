@@ -23,6 +23,7 @@ from ...core.errors import AppError
 from ...core.zoom import (
     LIVE_WINDOW_YEARS,
     area_level_for_tier,
+    coarser_levels,
     is_live_level,
     limit_for_tier,
     precision_for_tier,
@@ -45,12 +46,105 @@ NO_DATA_MESSAGE = (
 
 # --- aggregated tiers -------------------------------------------------------
 
+# Country-level rows need different geometry handling from every other tier.
+#
+# A country statistic has one stored point (ST_PointOnSurface of its polygon).
+# Requiring that point to fall inside the viewport made the figure invisible
+# almost everywhere useful: Germany's point-on-surface is near Kassel, so a
+# viewport over Berlin contained no marker and the map reported no data for a
+# country we genuinely cover.
+#
+# Instead we select countries whose POLYGON intersects the viewport, and place
+# the marker at the centroid of the visible part, so it is always on screen and
+# still sits within the country it describes.
+_COUNTRY_AREA_SQL = """
+WITH box AS (
+    SELECT ST_MakeEnvelope(%(w)s, %(s)s, %(e)s, %(n)s, 4326) AS g
+),
+-- ONE row per country. A country can legitimately hold both a real
+-- transaction-derived median AND an official index for the same year: France
+-- has recorded sales for 2021-2023 and a Eurostat series throughout, which
+-- produced two markers for France on the same map. Real recorded sales always
+-- win over an index, because a measured price beats a measure of change.
+picked AS (
+    SELECT DISTINCT ON (a.country_iso2)
+           a.area_level, a.area_code, a.area_name,
+           ST_Y(ST_PointOnSurface(ST_Intersection(c.geom, box.g))) AS latitude,
+           ST_X(ST_PointOnSurface(ST_Intersection(c.geom, box.g))) AS longitude,
+           a.year, a.median_price::float8 AS median_price,
+           a.p25_price::float8 AS p25_price, a.p75_price::float8 AS p75_price,
+           a.median_price_per_sqm::float8 AS median_price_per_sqm,
+           a.index_value::float8 AS index_value, a.basis,
+           a.growth_1y_pct::float8 AS stored_growth,
+           a.transaction_count, a.currency_code AS currency,
+           a.index_area_code, a.index_area_name,
+           NULL::float8 AS prev_median,
+           ST_Area(ST_Intersection(c.geom, box.g)) AS visible_area
+    FROM area_stats a
+    JOIN countries c ON c.iso2 = a.country_iso2
+    CROSS JOIN box
+    -- Deliberately NOT filtered to the single resolved country. At world and
+    -- continental zoom the viewport spans many countries, and showing only the
+    -- one under the viewport centre made the other covered countries look
+    -- absent.
+    WHERE a.area_level = 'country'
+      AND a.segment = %(segment)s
+      AND a.year = %(year)s
+      AND ST_Intersects(c.geom, box.g)
+      AND GeometryType(ST_Intersection(c.geom, box.g)) LIKE '%%POLYGON'
+    ORDER BY a.country_iso2,
+             (a.basis = 'TRANSACTIONS') DESC,
+             a.transaction_count DESC
+)
+SELECT * FROM picked
+-- Largest visible country first, so a LIMIT drops slivers at the map edge
+-- rather than the country the viewer is actually looking at.
+ORDER BY visible_area DESC
+LIMIT %(limit)s
+"""
+
+# Region-shaped areas (US states today) are selected by POLYGON intersection
+# and their marker is clipped into the visible area, the same treatment
+# countries get. Without it, California's figure was unreachable from a view of
+# Los Angeles and the map fell back to the national index.
+_REGION_AREA_SQL = """
+WITH box AS (
+    SELECT ST_MakeEnvelope(%(w)s, %(s)s, %(e)s, %(n)s, 4326) AS g
+)
+SELECT DISTINCT ON (a.region_id) a.area_level, a.area_code, a.area_name,
+       ST_Y(ST_PointOnSurface(ST_Intersection(r.geom, box.g))) AS latitude,
+       ST_X(ST_PointOnSurface(ST_Intersection(r.geom, box.g))) AS longitude,
+       a.year, a.median_price::float8 AS median_price,
+       a.p25_price::float8 AS p25_price, a.p75_price::float8 AS p75_price,
+       a.median_price_per_sqm::float8 AS median_price_per_sqm,
+       a.index_value::float8 AS index_value, a.basis,
+       a.growth_1y_pct::float8 AS stored_growth,
+       a.transaction_count, a.currency_code AS currency,
+       a.index_area_code, a.index_area_name,
+       NULL::float8 AS prev_median
+FROM area_stats a
+JOIN regions r ON r.id = a.region_id
+CROSS JOIN box
+WHERE a.country_iso2 = %(country)s
+  AND a.area_level = %(level)s
+  AND a.segment = %(segment)s
+  AND a.year = %(year)s
+  AND ST_Intersects(r.geom, box.g)
+  AND GeometryType(ST_Intersection(r.geom, box.g)) LIKE '%%POLYGON'
+-- Real sales beat an index for the same region, as above.
+ORDER BY a.region_id, (a.basis = 'TRANSACTIONS') DESC,
+         a.transaction_count DESC
+LIMIT %(limit)s
+"""
+
 _AREA_SQL = """
 SELECT a.area_level, a.area_code, a.area_name,
        ST_Y(a.geom) AS latitude, ST_X(a.geom) AS longitude,
        a.year, a.median_price::float8 AS median_price,
        a.p25_price::float8 AS p25_price, a.p75_price::float8 AS p75_price,
        a.median_price_per_sqm::float8 AS median_price_per_sqm,
+       a.index_value::float8 AS index_value, a.basis,
+       a.growth_1y_pct::float8 AS stored_growth,
        a.transaction_count, a.currency_code AS currency,
        a.index_area_code, a.index_area_name,
        prev.median_price::float8 AS prev_median
@@ -86,6 +180,8 @@ SELECT %(level)s AS area_level,
             FILTER (WHERE t.price_per_sqm IS NOT NULL))::float8 AS median_price_per_sqm,
        count(*)::int AS transaction_count,
        max(t.currency_code) AS currency,
+       NULL::float8 AS index_value, 'TRANSACTIONS'::text AS basis,
+       NULL::float8 AS stored_growth,
        -- Live tiers resolve their index from the modal district in the group.
        (SELECT l.area_code FROM area_index_links l
          WHERE l.country_iso2 = %(country)s AND l.district = mode() WITHIN GROUP (ORDER BY t.district)
@@ -232,7 +328,7 @@ async def map_prices(
     jurisdiction, provider = await registry.for_bbox(
         box.west, box.south, box.east, box.north
     )
-    if jurisdiction is None or provider is None:
+    if jurisdiction is None:
         return MapResponse(
             status=DataStatus.UNSUPPORTED_LOCATION,
             message=NO_DATA_MESSAGE,
@@ -253,11 +349,36 @@ async def map_prices(
             is_historical=year < today.year,
         )
 
+    # A jurisdiction can be genuinely covered by official area statistics while
+    # having no individual-sale data at all — 30 European countries via Eurostat
+    # and the United States via FHFA are in exactly that position. Area tiers
+    # are served from `area_stats`, which is provider-independent; the property
+    # tier requires a provider AND transaction-level coverage, so a request for
+    # individual dwellings in Germany is refused with the reason rather than
+    # answered with a national figure dressed up as a house valuation.
+    dwelling_level = provider is not None and coverage_mod.supports_individual_properties(
+        entry
+    )
+    if tier is MapTier.PROPERTY and not dwelling_level:
+        return MapResponse(
+            status=DataStatus.NO_DATA,
+            message=(
+                "Individual property prices are not available here. "
+                f"{entry.region_name or jurisdiction.country_name} is covered by "
+                "official area statistics only — zoom out to see them."
+                if entry else NO_DATA_MESSAGE
+            ),
+            tier=tier, year=year, is_future=is_future,
+            is_historical=year < today.year,
+            currency=(entry.currency_code if entry else None),
+            attributions=[s.attribution for s in (entry.sources if entry else [])],
+        )
+
     currency = entry.currency_code or currency_for_country(country) or "GBP"
     attributions = [s.attribution for s in entry.sources]
 
     try:
-        if tier is MapTier.PROPERTY:
+        if tier is MapTier.PROPERTY and dwelling_level:
             return await _property_tier(
                 box, tier, year, segment, country, provider, currency,
                 attributions, is_future, today, zoom,
@@ -295,10 +416,26 @@ async def _area_tier(
     stats_year = year
     if is_future:
         row = await fetch_one(
-            "SELECT max(year) AS y FROM area_stats WHERE country_iso2=%s AND area_level=%s",
-            (country, level),
+            "SELECT max(year) AS y FROM area_stats WHERE country_iso2=%s",
+            (country,),
         )
         stats_year = (row or {}).get("y") or today.year
+    else:
+        # Snap to the nearest year actually present. A dataset can have a hole
+        # in it (an interrupted ingest, or a publisher's reporting gap), and a
+        # selectable year that silently returns nothing reads as a broken map
+        # rather than as missing data. The response reports the year used.
+        row = await fetch_one(
+            """
+            SELECT year FROM area_stats
+            WHERE country_iso2 = %s AND segment = %s
+            ORDER BY abs(year - %s), year DESC
+            LIMIT 1
+            """,
+            (country, segment, year),
+        )
+        if row and row["year"] != year:
+            stats_year = row["year"]
 
     params = {
         "country": country, "level": level, "segment": segment,
@@ -306,28 +443,46 @@ async def _area_tier(
         "n": box.north, "limit": limit,
     }
 
-    if is_live_level(level):
-        key, name, min_count = _LIVE_KEYS[level]
-        # Pool several years so a street or postcode has enough sales to
-        # produce a median at all (see LIVE_WINDOW_YEARS).
-        window_from = stats_year - (LIVE_WINDOW_YEARS - 1)
-        params |= {
-            "min_count": min_count,
-            "date_from": date(window_from, 1, 1),
-            "date_to": date(stats_year, 12, 31),
-        }
-        rows = await fetch_all(_LIVE_SQL.format(key=key, name=name), params)
-        for row in rows:
-            row["window_from_year"] = window_from
-            row["window_to_year"] = stats_year
-    else:
-        rows = await fetch_all(_AREA_SQL, params)
+    # Try the tier's own level, then progressively coarser ones. A viewport over
+    # Germany asks for a postcode sector and gets the national figure, because
+    # that is the finest granularity Eurostat publishes — reported as such
+    # rather than returned empty.
+    rows: list[dict] = []
+    level_used = level
+    for candidate in coarser_levels(level):
+        if is_live_level(candidate):
+            key, name, min_count = _LIVE_KEYS[candidate]
+            # Pool several years so a street or postcode has enough sales to
+            # produce a median at all (see LIVE_WINDOW_YEARS).
+            window_from = stats_year - (LIVE_WINDOW_YEARS - 1)
+            attempt = await fetch_all(
+                _LIVE_SQL.format(key=key, name=name),
+                params | {
+                    "level": candidate,
+                    "min_count": min_count,
+                    "date_from": date(window_from, 1, 1),
+                    "date_to": date(stats_year, 12, 31),
+                },
+            )
+            for row in attempt:
+                row["window_from_year"] = window_from
+                row["window_to_year"] = stats_year
+        elif candidate == "country":
+            attempt = await fetch_all(_COUNTRY_AREA_SQL, params)
+        elif candidate == "state":
+            attempt = await fetch_all(_REGION_AREA_SQL, params | {"level": candidate})
+        else:
+            attempt = await fetch_all(_AREA_SQL, params | {"level": candidate})
+        if attempt:
+            rows, level_used = attempt, candidate
+            break
+    level = level_used
 
     if not rows:
         return MapResponse(
             status=DataStatus.NO_DATA,
             message=(
-                f"No recorded residential sales for {year} in this area."
+                f"No recorded residential sales for {stats_year} in this area."
                 if not is_future else
                 "No recent sales in this area to project forward."
             ),
@@ -364,13 +519,28 @@ async def _area_tier(
 
     for row in rows:
         median = row["median_price"]
-        growth = None
-        if row.get("prev_median") and row["prev_median"] > 0:
+        basis = row.get("basis") or "TRANSACTIONS"
+        has_level = median is not None
+
+        # Growth from real order statistics where we have prices; otherwise the
+        # growth published with the index itself.
+        growth = row.get("stored_growth")
+        if has_level and row.get("prev_median") and row["prev_median"] > 0:
             growth = round((median / row["prev_median"] - 1) * 100, 1)
+        elif growth is not None:
+            growth = round(float(growth), 1)
+
+        # An index-only row with no growth figure says nothing at all.
+        if not has_level and growth is None:
+            continue
 
         confidence = None
         forecast_area = None
         if is_future:
+            # A forecast projects a price level forward. With no level to
+            # project, there is nothing defensible to show for a future year.
+            if not has_level:
+                continue
             fc = forecasts.get(row["area_code"])
             if fc is None:
                 continue          # no defensible projection -> omit, never guess
@@ -385,12 +555,15 @@ async def _area_tier(
                 area_name=row["area_name"] or row["area_code"],
                 latitude=row["latitude"], longitude=row["longitude"],
                 year=year,
-                median_price=round(median),
+                median_price=round(median) if median is not None else None,
                 p25_price=row["p25_price"], p75_price=row["p75_price"],
                 median_price_per_sqm=row["median_price_per_sqm"],
                 transaction_count=row["transaction_count"],
                 currency=row["currency"] or currency,
                 precision_level=precision,
+                basis=basis,
+                index_value=row.get("index_value"),
+                has_price_level=has_level,
                 window_from_year=row.get("window_from_year") or year,
                 window_to_year=row.get("window_to_year") or year,
                 growth_1y_pct=growth,
@@ -406,13 +579,17 @@ async def _area_tier(
             message=(
                 f"A {year} projection is beyond what the available price index "
                 "supports for this area."
+                if is_future else
+                f"No usable figures for {stats_year} in this area."
             ),
-            tier=tier, year=year, is_future=is_future, currency=currency,
+            tier=tier, year=year, data_year=stats_year, is_future=is_future,
+            is_historical=year < today.year, currency=currency,
             attributions=attributions,
         )
 
     return MapResponse(
-        status=DataStatus.OK, tier=tier, year=year, is_future=is_future,
+        status=DataStatus.OK, tier=tier, year=year, data_year=stats_year,
+        is_future=is_future,
         is_historical=year < today.year, currency=currency, areas=areas,
         truncated=len(rows) >= limit, attributions=attributions,
     )

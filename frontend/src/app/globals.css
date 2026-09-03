@@ -131,6 +131,14 @@ body {
   text-transform: uppercase;
 }
 
+/* A growth-only figure (an official index with no price level) must never be
+   mistaken for a price. Tabular, tinted, and visibly not currency. */
+.rm-marker__pill--growth {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-regional);
+  background: #f0fdfa;
+}
+
 /* --- scrollbars in the side panel ---------------------------------------- */
 .rm-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 .rm-scroll::-webkit-scrollbar { width: 8px; height: 8px; }

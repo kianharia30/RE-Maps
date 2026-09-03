@@ -14,35 +14,63 @@ codebase.
 ## What actually works right now
 
 This is a running system, not a scaffold. The numbers below are from the loaded
-database, measured on 29 August 2026.
+database, measured on 3 September 2026.
 
 | | |
 |---|---|
-| **Real transactions loaded** | **5,067,654** |
-| — England & Wales (HM Land Registry) | 4,474,099 (2021–2026) |
+| **Real transactions loaded** | **6,021,794** |
+| — England & Wales (HM Land Registry) | 5,428,239 (2021–2026) |
 | — France (geo-DVF, 8 metro departments) | 593,555 (2021–2023) |
-| Distinct dwellings identified | 4,660,553 |
-| Official index observations | 730,572 monthly points, 376 areas, from 1968 |
-| Precomputed map aggregates | 227,632 |
+| Distinct dwellings identified | 5,464,429 |
+| Official index observations | 744,709 points, 495 areas, from 1968 |
+| Precomputed map aggregates | 275,910 |
 | UK postcode centroids | 2,610,351 |
-| Country polygons | 239 |
-| Tests passing | **256** |
+| Country polygons / sub-national regions | 239 / 4,557 |
+| **Jurisdictions with real data** | **31** |
+| Tests passing | **299** |
 | **AVM median error** (held-out real sales) | **7.18%** — 85.2% within 20% |
 | **Forecast skill vs random walk** | **+7% at 1 year, +48% at 10 years** |
 
-Supported markets:
+## What "supported" means here
+
+Coverage comes in two grades, and the API never blurs them.
+
+**Transaction-level** — we hold the individual recorded sales, so the map can
+show a specific dwelling and value it.
 
 | Jurisdiction | Transactions | Coordinates | Floor area | Index | Forecast |
 |---|---|---|---|---|---|
 | England & Wales | ✅ 2021–2026 | postcode centroid | ⚠️ needs EPC key | ✅ official | ✅ |
 | France (8 metros) | ✅ 2021–2023 | ✅ **cadastral parcel** | ✅ **every record** | ⚠️ derived | ❌ history too short |
-| Scotland | ❌ | — | — | — | — |
-| Northern Ireland | ❌ | — | — | — | — |
-| Everywhere else | ❌ | — | — | — | — |
 
-Scotland and Northern Ireland are **registered as having no data**, with the
-reason returned by the API: HM Land Registry Price Paid Data covers England and
-Wales only. Searching Edinburgh moves the map and tells you that.
+**Statistics-only** — 29 further jurisdictions publish an official house price
+**index** but no individual sales. An index is based at 100 in a reference year:
+it says prices rose 4.2%, *not* that a house costs €380,000. Deriving a price
+from it would need a base-year price nobody publishes, so these areas carry
+**no price level at all** — `median_price` is `null`, `has_price_level` is
+`false`, and the map shows a growth rate instead of a number that looks like a
+price.
+
+| Source | Jurisdictions | Granularity |
+|---|---|---|
+| [Eurostat `prc_hpi_q`](https://ec.europa.eu/eurostat/databrowser/view/prc_hpi_q/default/table) | 28 European countries | national |
+| [US FHFA HPI](https://www.fhfa.gov/data/hpi) | United States | national + 51 states |
+
+So Berlin, Madrid, Warsaw and Los Angeles now show real, sourced figures where
+they used to show nothing — and still refuse to price an individual house,
+because nobody publishes the sales that would justify one.
+
+**Nothing at all** — Scotland, Northern Ireland, and every country not listed
+above. Scotland and Northern Ireland are **registered as having no data**, with
+the reason returned by the API: HM Land Registry Price Paid Data covers England
+and Wales only. Searching Edinburgh moves the map and tells you that.
+
+Japan, Australia, Canada, India, Brazil and most of Asia and Africa are absent
+because open transaction data does not exist for them, not because the code
+cannot reach it. Two known routes in are gated behind a free API key that has
+not been wired up (Japan's MLIT transaction API, and US Census ACS for real
+dollar price levels by county); both are documented in
+[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
 
 ---
 
@@ -315,6 +343,11 @@ computed from ineligible transactions).
 
 ## Limitations, stated plainly
 
+0. **29 of the 31 supported jurisdictions have no price level.** They are
+   covered by an official index only, which measures change rather than value.
+   The map shows growth there and refuses to show a price, a comparable, a
+   valuation or a forecast — a forecast projects a price level, and there is
+   none to project. Only England & Wales and France carry individual sales.
 1. **Transaction coverage is 2021–2026 for the UK and 2021–2023 for France** in
    this deployment, limited by disk. Earlier years load with one command.
    Historical estimates for years outside the window still work, via index

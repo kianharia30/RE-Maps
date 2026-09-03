@@ -200,6 +200,84 @@ def register() -> int:
     return rows
 
 
+# The set of countries holding transactions is materialised once in a CTE. A
+# correlated NOT EXISTS here re-scanned `transactions` per country and took
+# over seven minutes; this form scans it once.
+STATS_ONLY_SQL = """
+WITH txn_countries AS MATERIALIZED (
+    SELECT DISTINCT country_iso2 FROM transactions
+)
+SELECT m.country_iso2,
+       c.name  AS country_name,
+       c.currency_code,
+       min(m.period) AS from_period,
+       max(m.period) AS to_period,
+       max(m.source_key) AS source_key,
+       count(DISTINCT m.area_code) AS areas,
+       max(m.area_level) AS area_level
+FROM market_indices m
+JOIN countries c ON c.iso2 = m.country_iso2
+WHERE m.source_key = ANY(%(sources)s::text[])
+  AND m.country_iso2 NOT IN (SELECT country_iso2 FROM txn_countries)
+GROUP BY m.country_iso2, c.name, c.currency_code
+ORDER BY m.country_iso2
+"""
+
+# Sources that publish an index but no price level.
+INDEX_ONLY_SOURCES = ["eurostat_hpi", "us_fhfa_hpi"]
+
+
+def register_statistics_only() -> int:
+    """Register jurisdictions covered by an official index but no sales data.
+
+    Driven entirely by what is actually loaded, so a country appears here only
+    once its index series is in the database. Each entry records honestly that
+    it offers no dwelling-level figures and no price level at all.
+    """
+    written = 0
+    with sync_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(STATS_ONLY_SQL, {"sources": INDEX_ONLY_SOURCES})
+            rows = cur.fetchall()
+
+        for row in rows:
+            granularity = (
+                "national level only" if row["areas"] == 1
+                else f"{row['areas']} {row['area_level']}-level areas"
+            )
+            entry = {
+                "provider_key": "official_statistics",
+                "country_iso2": row["country_iso2"],
+                "region_code": None,
+                "region_name": row["country_name"],
+                "transaction_level_data": False,
+                "property_characteristics": False,
+                "market_index": True,
+                # An index has no price level to project, so a monetary
+                # forecast is not possible even though the series is long.
+                "forecast_supported": False,
+                "max_precision": "CITY_REGIONAL",
+                "coordinate_precision": "REGION",
+                "historical_from": row["from_period"],
+                "historical_to": row["to_period"],
+                "currency_code": row["currency_code"],
+                "notes": (
+                    f"Covered by an official house price index at "
+                    f"{granularity}. This is an INDEX, not a price level: it "
+                    "shows how prices have changed, but no monetary value and "
+                    "no individual property data are available for this "
+                    "country. Individual sales are not published openly here."
+                ),
+                "source_keys": [row["source_key"]],
+            }
+            with conn.cursor() as cur:
+                cur.execute(UPSERT, entry)
+            written += 1
+        conn.commit()
+    log.info("registered %s statistics-only jurisdictions", written)
+    return written
+
+
 def purge_unbacked() -> int:
     """Remove coverage rows for countries with nothing loaded at all.
 
@@ -233,5 +311,6 @@ def purge_unbacked() -> int:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     register()
+    register_statistics_only()
     purge_unbacked()
     print("coverage registered")

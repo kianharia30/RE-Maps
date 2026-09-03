@@ -254,3 +254,65 @@ is substituted**.
 **No source is scraped.** Every dataset is an official bulk download or a
 documented API used within its stated terms. Rightmove, Zoopla, Zillow and
 similar platforms are not used, because doing so would violate their terms.
+
+---
+
+## Statistics-only sources (added September 2026)
+
+These publish an official house price **index**, not prices. Every row they
+produce carries `basis = 'OFFICIAL_INDEX'`, `median_price = NULL` and
+`has_price_level = false`.
+
+### Why an index cannot become a price
+
+An index is a ratio against a reference period — Eurostat's is 100 in 2015. To
+turn "the index is 142" into a monetary value you need the 2015 price level for
+that exact area and dwelling mix. No publisher in this list provides it.
+Multiplying an index by a price borrowed from elsewhere (a neighbouring country,
+a national average, a different year) would produce a number with no evidence
+behind it. So these areas report growth and nothing else.
+
+| | Eurostat `prc_hpi_q` | US FHFA HPI |
+|---|---|---|
+| Owner | Eurostat, European Commission | Federal Housing Finance Agency |
+| Licence | Eurostat open data policy (attribution) | US Government work, public domain |
+| API key | none | none |
+| Coverage | 28 European countries, national | USA national + 51 states |
+| History | 2005– | 1975– (purchase-only from 1991) |
+| Frequency | quarterly | monthly |
+| Known limits | national level only — no city or regional breakdown | covers only homes with conforming conventional mortgages, so cash and jumbo-financed sales are out of scope |
+
+Ingested by [`backend/ingest/world_stats.py`](../backend/ingest/world_stats.py).
+Sub-national shapes for clipping figures into the viewport come from Natural
+Earth admin-1 (public domain), via
+[`backend/ingest/regions.py`](../backend/ingest/regions.py).
+
+## Verified but not yet wired up
+
+Both were confirmed live during research and both need a **free** API key, so
+neither is enabled. Nothing is faked in their absence — the countries simply
+report no coverage.
+
+| Source | What it would add | Blocker |
+|---|---|---|
+| [US Census ACS](https://www.census.gov/data/developers/data-sets/acs-5year.html) (`B25077_001E`) | Real **US dollar** median home values for all 3,143 counties — an actual price level, not an index | Returns an HTML "Missing Key" page without `CENSUS_API_KEY`. Free, instant registration. |
+| [Japan MLIT Reinfolib](https://www.reinfolib.mlit.go.jp/) | Real **transaction-level** Japanese sales, which would make Tokyo a supported market | Returns HTTP 401 without a key. Free registration. |
+
+Two further sources were confirmed live and are transaction-level, but are not
+ingested because their geography cannot be resolved honestly yet:
+
+- **[Ireland Residential Property Price Register](https://propertypriceregister.ie/)**
+  (CC BY 4.0, 2010–, ~19 MB) — every declared sale with a "not full market
+  price" flag that maps onto our existing quality flags. Addresses are free
+  text and Eircodes are sparsely populated, and Eircode-to-coordinate data is
+  *licensed*, so figures could only be published at county level.
+- **[Singapore HDB resale](https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view)**
+  (Singapore Open Data Licence) — every HDB resale, but HDB flats are about
+  three quarters of the housing stock and exclude private condominiums and
+  landed property, so the figures are not representative of the whole market
+  and would need labelling as such.
+
+Sources that were checked and found **unusable**: BIS property prices (HTTP 404
+on the documented v2 API path), FHFA county and ZIP5 files (HTTP 404 — only the
+master file is published at a stable URL), NSW Valuer-General bulk sales (HTTP
+403, blocked to scripted clients).

@@ -114,13 +114,18 @@ export interface AreaStat {
   latitude: number;
   longitude: number;
   year: number;
-  median_price: number;
+  /** NULL where only an official index exists — an index has no price level. */
+  median_price: number | null;
   p25_price: number | null;
   p75_price: number | null;
   median_price_per_sqm: number | null;
   transaction_count: number;
   currency: string;
   precision_level: PrecisionLevel;
+  /** TRANSACTIONS = real recorded sales; OFFICIAL_INDEX = index only. */
+  basis: string;
+  index_value: number | null;
+  has_price_level: boolean;
   /** Span of sales the median covers; wider than one year for live tiers. */
   window_from_year: number | null;
   window_to_year: number | null;
@@ -136,6 +141,8 @@ export interface MapResponse {
   message: string | null;
   tier: MapTier;
   year: number;
+  /** The year the figures actually come from; may differ from `year`. */
+  data_year: number | null;
   is_future: boolean;
   is_historical: boolean;
   currency: string | null;

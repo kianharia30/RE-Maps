@@ -10,17 +10,35 @@ SYMBOLS: dict[str, str] = {
     "GBP": "£", "EUR": "€", "USD": "$", "AUD": "A$", "CAD": "C$",
     "NZD": "NZ$", "INR": "₹", "JPY": "¥", "CHF": "CHF ", "SEK": "kr ",
     "NOK": "kr ", "DKK": "kr ", "ZAR": "R", "BRL": "R$", "SGD": "S$",
-    "HKD": "HK$", "PLN": "zł ", "CZK": "Kč ",
+    "HKD": "HK$", "PLN": "zł ", "CZK": "Kč ", "HUF": "Ft ", "RON": "lei ",
+    "ISK": "kr ", "TRY": "₺", "RSD": "din ", "UAH": "₴", "KRW": "₩",
+    "CNY": "¥", "MXN": "MX$", "AED": "AED ", "ILS": "₪",
 }
 
 # ISO 3166-1 alpha-2 -> ISO 4217. Used when a provider does not state one.
+#
+# Completeness matters here: an incomplete map used to fall through to a
+# hard-coded "EUR", which labelled Hungarian figures in euros. A missing entry
+# now yields None and the currency is simply not shown, rather than asserting a
+# currency the country does not use.
 COUNTRY_CURRENCY: dict[str, str] = {
-    "GB": "GBP", "IE": "EUR", "FR": "EUR", "DE": "EUR", "ES": "EUR",
-    "IT": "EUR", "NL": "EUR", "BE": "EUR", "PT": "EUR", "AT": "EUR",
-    "FI": "EUR", "GR": "EUR", "LU": "EUR", "US": "USD", "CA": "CAD",
-    "AU": "AUD", "NZ": "NZD", "IN": "INR", "JP": "JPY", "CH": "CHF",
-    "SE": "SEK", "NO": "NOK", "DK": "DKK", "ZA": "ZAR", "BR": "BRL",
-    "SG": "SGD", "HK": "HKD", "PL": "PLN", "CZ": "CZK",
+    # --- euro area ---------------------------------------------------------
+    "AT": "EUR", "BE": "EUR", "CY": "EUR", "DE": "EUR", "EE": "EUR",
+    "ES": "EUR", "FI": "EUR", "FR": "EUR", "GR": "EUR", "HR": "EUR",
+    "IE": "EUR", "IT": "EUR", "LT": "EUR", "LU": "EUR", "LV": "EUR",
+    "MT": "EUR", "NL": "EUR", "PT": "EUR", "SI": "EUR", "SK": "EUR",
+    # Bulgaria adopted the euro on 1 January 2026. Index series published
+    # before then were denominated in leva; since an index has no price level
+    # this affects labelling only.
+    "BG": "EUR",
+    # --- rest of Europe ----------------------------------------------------
+    "GB": "GBP", "CH": "CHF", "CZ": "CZK", "DK": "DKK", "HU": "HUF",
+    "IS": "ISK", "NO": "NOK", "PL": "PLN", "RO": "RON", "SE": "SEK",
+    "TR": "TRY", "RS": "RSD", "UA": "UAH",
+    # --- rest of world -----------------------------------------------------
+    "US": "USD", "CA": "CAD", "AU": "AUD", "NZ": "NZD", "IN": "INR",
+    "JP": "JPY", "ZA": "ZAR", "BR": "BRL", "SG": "SGD", "HK": "HKD",
+    "KR": "KRW", "CN": "CNY", "MX": "MXN", "AE": "AED", "IL": "ILS",
 }
 
 

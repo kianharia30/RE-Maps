@@ -117,6 +117,98 @@ SOURCES: list[dict] = [
         "source_published_at": date(2025, 10, 1),
     },
     {
+        "key": "eurostat_hpi",
+        "name": "Eurostat House Price Index (prc_hpi_q)",
+        "owner": "Eurostat, European Commission",
+        "url": "https://ec.europa.eu/eurostat/databrowser/view/prc_hpi_q/default/table",
+        "documentation_url": "https://wikis.ec.europa.eu/display/EUROSTATHELP/API+-+Detailed+guidelines+-+API+Statistics",
+        "licence": "Eurostat open data policy (re-use permitted with attribution)",
+        "licence_url": "https://ec.europa.eu/eurostat/about-us/policies/copyright",
+        "attribution": "Source: Eurostat, House price index (prc_hpi_q).",
+        "allowed_use": (
+            "Free re-use including commercial, with attribution. This is an "
+            "INDEX (2015 = 100), not a price level: it measures change over "
+            "time and cannot be converted into a monetary value without a "
+            "base-year price, which Eurostat does not publish here. Deflated "
+            "and nominal variants exist; RE-Maps ingests the nominal index for "
+            "total purchases."
+        ),
+        "update_frequency": "Quarterly",
+        "geographic_coverage": "31 European countries, national level only",
+        "historical_coverage": "2005 onwards for most countries",
+        "source_published_at": None,
+    },
+    {
+        "key": "us_fhfa_hpi",
+        "name": "FHFA House Price Index",
+        "owner": "Federal Housing Finance Agency (USA)",
+        "url": "https://www.fhfa.gov/data/hpi",
+        "documentation_url": "https://www.fhfa.gov/data/hpi/datasets",
+        "licence": "US Government work — public domain (17 U.S.C. §105)",
+        "licence_url": "https://www.fhfa.gov/about/policies",
+        "attribution": "Source: Federal Housing Finance Agency, House Price Index.",
+        "allowed_use": (
+            "Public domain. This is a repeat-sales INDEX, not a price level, "
+            "so it supports growth rates but no monetary value. It also covers "
+            "only homes with conforming, conventional mortgages, so cash and "
+            "jumbo-financed sales are out of scope."
+        ),
+        "update_frequency": "Monthly",
+        "geographic_coverage": "United States, by state and metropolitan area",
+        "historical_coverage": "1975 onwards (purchase-only series from 1991)",
+        "source_published_at": None,
+    },
+    {
+        "key": "ie_ppr",
+        "name": "Residential Property Price Register (Ireland)",
+        "owner": "Property Services Regulatory Authority (Ireland)",
+        "url": "https://propertypriceregister.ie/",
+        "documentation_url": "https://propertypriceregister.ie/website/npsra/pprweb.nsf/page/ppr-home-en",
+        "licence": "Creative Commons Attribution 4.0 (PSRA open data)",
+        "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+        "attribution": (
+            "Contains data from the Residential Property Price Register, "
+            "Property Services Regulatory Authority, Ireland."
+        ),
+        "allowed_use": (
+            "Free re-use with attribution. Declared prices as filed for stamp "
+            "duty; the register flags sales that were not at full market price "
+            "and those quoted VAT-exclusive, both of which RE-Maps excludes "
+            "from valuation evidence. Addresses are free text and Eircodes are "
+            "sparsely populated, and Eircode-to-coordinate data is licensed, "
+            "so Irish figures are published at county level only."
+        ),
+        "update_frequency": "Continuously, published as a full file",
+        "geographic_coverage": "Republic of Ireland, by county",
+        "historical_coverage": "2010 onwards",
+        "source_published_at": None,
+    },
+    {
+        "key": "sg_hdb_resale",
+        "name": "HDB Resale Flat Prices (Singapore)",
+        "owner": "Housing & Development Board / data.gov.sg",
+        "url": "https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view",
+        "documentation_url": "https://guide.data.gov.sg/developer-guide/api-overview",
+        "licence": "Singapore Open Data Licence v1.0",
+        "licence_url": "https://data.gov.sg/open-data-licence",
+        "attribution": (
+            "Contains information from the Housing & Development Board "
+            "resale flat prices dataset, accessed via data.gov.sg, licensed "
+            "under the Singapore Open Data Licence version 1.0."
+        ),
+        "allowed_use": (
+            "Free re-use with attribution. Covers HDB resale flats only — "
+            "roughly three quarters of Singapore's housing stock, but NOT "
+            "private condominiums or landed property, so figures are not "
+            "representative of the whole market. Published per town, which is "
+            "the granularity RE-Maps uses."
+        ),
+        "update_frequency": "Monthly",
+        "geographic_coverage": "Singapore, by HDB town",
+        "historical_coverage": "2017 onwards in the current resource",
+        "source_published_at": None,
+    },
+    {
         "key": "natural_earth_admin0",
         "name": "Natural Earth Admin 0 - Countries (10m)",
         "owner": "Natural Earth",
@@ -128,6 +220,25 @@ SOURCES: list[dict] = [
         "allowed_use": "Unrestricted. Used only to resolve coordinates to a country.",
         "update_frequency": "Irregular",
         "geographic_coverage": "Global",
+        "historical_coverage": "Current boundaries",
+        "source_published_at": None,
+    },
+    {
+        "key": "natural_earth_admin1",
+        "name": "Natural Earth Admin 1 - States and Provinces (10m)",
+        "owner": "Natural Earth",
+        "url": "https://www.naturalearthdata.com/downloads/10m-cultural-vectors/",
+        "documentation_url": "https://github.com/nvkelso/natural-earth-vector",
+        "licence": "Public domain",
+        "licence_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+        "attribution": "Sub-national boundaries from Natural Earth (public domain).",
+        "allowed_use": (
+            "Unrestricted. Used to give area statistics a shape so they can be "
+            "clipped into the map viewport, and to resolve a point to a region. "
+            "Never used as a source of prices."
+        ),
+        "update_frequency": "Irregular",
+        "geographic_coverage": "Global, 4,596 sub-national regions",
         "historical_coverage": "Current boundaries",
         "source_published_at": None,
     },

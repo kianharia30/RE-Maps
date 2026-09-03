@@ -76,10 +76,12 @@ migrate:  ## Apply schema migrations
 data-download: data-download-geo data-download-postcodes data-download-hpi \
                data-download-ppd data-download-dvf  ## Fetch every dataset
 
-data-download-geo:  ## Country boundaries (Natural Earth, ~13 MB)
+data-download-geo:  ## Country + sub-national boundaries (Natural Earth, ~54 MB)
 	@mkdir -p $(RAW)/geo
 	curl -sL --retry 3 -o $(RAW)/geo/ne_10m_admin_0_countries.geojson \
 	  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson
+	curl -sL --retry 3 -o $(RAW)/geo/ne_10m_admin_1_states_provinces.geojson \
+	  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson
 	@echo "geo: $$(du -h $(RAW)/geo | tail -1)"
 
 data-download-postcodes:  ## UK postcode centroids (Open Postcode Geo, ~66 MB)
@@ -121,20 +123,25 @@ data-download-dvf:  ## France geo-DVF, per year (~100 MB/yr gzipped)
 
 # --- ingestion -------------------------------------------------------------
 
-ingest: ingest-reference ingest-uk ingest-fr stats  ## Load everything
+ingest: ingest-reference ingest-uk ingest-fr ingest-world stats  ## Load everything
 	@echo
 	@echo "ingestion complete. Coverage:"
 	@psql -d $(DB_NAME) -c "SELECT country_iso2, region_code, transaction_level_data, market_index, forecast_supported, historical_from, historical_to FROM provider_coverage ORDER BY 1,2 NULLS FIRST;"
 
-ingest-reference:  ## Data-source registry, country polygons, postcode gazetteer
+ingest-reference:  ## Data-source registry, boundaries, postcode gazetteer
 	cd backend && .venv/bin/python -m ingest.sources
 	cd backend && .venv/bin/python -m ingest.countries
+	cd backend && .venv/bin/python -m ingest.regions
 	cd backend && .venv/bin/python -m ingest.postcodes
 
 ingest-uk:  ## HM Land Registry Price Paid Data + UK House Price Index
 	cd backend && .venv/bin/python -m ingest.uk_hpi
 	cd backend && .venv/bin/python -m ingest.uk_ppd
 	cd backend && .venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='%(message)s'); from ingest.uk_hpi import link_districts; link_districts()"
+
+ingest-world:  ## Official indices for 29 further jurisdictions (Eurostat, US FHFA)
+	@echo "These sources publish an INDEX, not prices: growth only, no price level."
+	cd backend && .venv/bin/python -m ingest.world_stats
 
 ingest-fr:  ## France geo-DVF + derived local index
 	cd backend && .venv/bin/python -m ingest.fr_dvf $(if $(FR_DEPTS),--departments $(FR_DEPTS),)

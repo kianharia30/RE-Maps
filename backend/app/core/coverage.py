@@ -101,14 +101,29 @@ async def lookup(
 def is_usable(entry: CoverageEntry | None) -> bool:
     """Whether an entry represents genuinely available property data.
 
-    A region can be *registered* precisely in order to record that it has
-    nothing — Scotland and Northern Ireland exist in the registry so that the
-    England-and-Wales entry cannot be applied to them by accident. Such a row
-    must be treated as no coverage.
+    "Usable" means we hold SOMETHING real, not necessarily individual sales: a
+    country covered only by an official national index is genuinely covered at
+    city/regional precision, and reporting it as unsupported would be as wrong
+    as inventing a price for it.
+
+    The test is therefore `max_precision != NONE`. A region registered
+    specifically to record an absence — Scotland, Northern Ireland — carries
+    NONE and is correctly excluded.
     """
     if entry is None:
         return False
-    return entry.transaction_level_data and entry.max_precision is not PrecisionLevel.NONE
+    return entry.max_precision is not PrecisionLevel.NONE
+
+
+def supports_individual_properties(entry: CoverageEntry | None) -> bool:
+    """Whether dwelling-level figures are available, as opposed to area
+    statistics only. Guards the property tier and every valuation path."""
+    if entry is None:
+        return False
+    return entry.transaction_level_data and entry.max_precision in (
+        PrecisionLevel.EXACT_TRANSACTION,
+        PrecisionLevel.PROPERTY_ESTIMATE,
+    )
 
 
 async def require(
@@ -139,7 +154,7 @@ async def supported_countries() -> set[str]:
     rows = await fetch_all(
         """
         SELECT DISTINCT country_iso2 FROM provider_coverage
-        WHERE transaction_level_data AND max_precision <> 'NONE'
+        WHERE max_precision <> 'NONE'
         """
     )
     return {r["country_iso2"] for r in rows}
