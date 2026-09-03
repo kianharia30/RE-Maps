@@ -102,7 +102,12 @@ export const api = {
     request<CoverageResponse>("/api/coverage/at", { lat, lon }, "coverage"),
 
   coverageIndex: () =>
-    request<{ supported: CoverageEntry[]; generated_at: string | null }>("/api/coverage"),
+    request<{
+      supported: CoverageEntry[];
+      /** Places registered to record that no open data exists, with the reason. */
+      known_absences: CoverageEntry[];
+      generated_at: string | null;
+    }>("/api/coverage"),
 
   sources: () => request<SourceRef[]>("/api/sources"),
 

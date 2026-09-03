@@ -232,6 +232,43 @@ class TestUnsupportedLocationsReturnNoPrices:
 
 
 @pytest.mark.db
+class TestTheRegistryListingSeparatesAbsenceFromCoverage:
+    """`supported` must not contain places we know have no data.
+
+    Scotland and Northern Ireland are registered precisely to record that HM
+    Land Registry does not cover them. Listing them under `supported` — which
+    the endpoint did — invites a client to conclude the opposite.
+    """
+
+    def test_supported_contains_only_usable_coverage(self, client):
+        body = client.get("/api/coverage").json()
+        for entry in body["supported"]:
+            assert entry["max_precision"] != "NONE", (
+                f"{entry['region_name']} is listed as supported but has no data"
+            )
+
+    def test_absences_are_still_reported_with_a_reason(self, client):
+        body = client.get("/api/coverage").json()
+        absences = body["known_absences"]
+        names = {e["region_name"] for e in absences}
+        assert "Scotland" in names
+        assert "Northern Ireland" in names
+        for entry in absences:
+            assert entry["max_precision"] == "NONE"
+            assert entry["transaction_level_data"] is False
+            # An absence is only useful if it says why.
+            assert entry["notes"], f"{entry['region_name']} gives no reason"
+
+    def test_every_registered_row_appears_exactly_once(self, client):
+        body = client.get("/api/coverage").json()
+        keys = [
+            (e["country_iso2"], e["region_code"])
+            for e in body["supported"] + body["known_absences"]
+        ]
+        assert len(keys) == len(set(keys)), "a jurisdiction is listed twice"
+
+
+@pytest.mark.db
 class TestStatisticsOnlyCoverage:
     """Countries covered by an official index but with no individual sales.
 

@@ -42,7 +42,20 @@ class CoverageResponse(BaseModel):
 
 
 class CoverageIndex(BaseModel):
-    """Everything we support, for the /api/coverage landing view."""
+    """The whole registry, with absences kept separate from coverage.
 
-    supported: list[CoverageEntry] = Field(default_factory=list)
+    `supported` used to contain every registered row, including the ones that
+    exist precisely to record that a place has NO data. A client reading
+    `supported` would have concluded that Scotland was supported. The two are
+    now distinct fields, because a registered absence is useful information but
+    it is not coverage.
+    """
+
+    # Jurisdictions where we hold something real.
+    supported: list[CoverageEntry]
+    # Jurisdictions registered specifically to record that no open data exists
+    # -- Scotland and Northern Ireland, which HM Land Registry does not cover.
+    # Kept in the response because "we know there is nothing here, and why" is
+    # a more useful answer than silence.
+    known_absences: list[CoverageEntry] = []
     generated_at: str | None = None

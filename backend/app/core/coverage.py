@@ -169,8 +169,10 @@ async def index() -> CoverageIndex:
         ORDER BY pc.country_iso2, pc.region_code NULLS FIRST
         """
     )
+    entries = [await _to_entry(r) for r in rows]
     return CoverageIndex(
-        supported=[await _to_entry(r) for r in rows],
+        supported=[e for e in entries if is_usable(e)],
+        known_absences=[e for e in entries if not is_usable(e)],
         generated_at=datetime.now(UTC).isoformat(),
     )
 
