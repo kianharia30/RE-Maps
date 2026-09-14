@@ -433,186 +433,124 @@ class TestAreaLevelPriceLevels:
 
 
 @pytest.mark.db
-class TestStatisticsOnlyCoverage:
-    """Countries covered by an official index but with no individual sales.
+class TestCountriesWithoutPricesShowNothing:
+    """A growth rate is not a price, so it is not shown at all.
 
-    These are the newest and most easily abused rows in the registry: it would
-    be trivial to turn an index into a plausible-looking price. Every assertion
-    here exists to stop that.
+    These countries publish an official house price index and nothing else. An
+    index measures change: it says prices moved 4.2%, never what a home costs.
+    Rather than put a percentage on a map where every other country shows
+    money, they are registered as having no usable data -- with the reason, so
+    the API explains itself instead of shrugging.
+
+    The index is still held in `market_indices`; it is real data. It is simply
+    not something this map can present as a price.
     """
 
-    # (name, lat, lon, expected currency)
-    STATISTICS_ONLY = [
-        ("Berlin", 52.5200, 13.4050, "EUR"),
-        ("Madrid", 40.4168, -3.7038, "EUR"),
-        ("Rome", 41.9028, 12.4964, "EUR"),
-        ("Warsaw", 52.2297, 21.0122, "PLN"),
-        ("Stockholm", 59.3293, 18.0686, "SEK"),
-        ("New York", 40.7128, -74.0060, "USD"),
-        ("Los Angeles", 34.0522, -118.2437, "USD"),
+    NO_PRICES = [
+        ("Berlin", 52.5200, 13.4050),
+        ("Madrid", 40.4168, -3.7038),
+        ("Rome", 41.9028, 12.4964),
+        ("Warsaw", 52.2297, 21.0122),
+        ("Lisbon", 38.7223, -9.1393),
+        ("New York", 40.7128, -74.0060),
+        ("Los Angeles", 34.0522, -118.2437),
     ]
 
-    @pytest.mark.parametrize("name,lat,lon,currency", STATISTICS_ONLY)
-    def test_coverage_is_reported_but_without_transaction_data(
-        self, client, name, lat, lon, currency
+    @pytest.mark.parametrize("name,lat,lon", NO_PRICES)
+    def test_no_figure_of_any_kind_is_returned(self, client, name, lat, lon):
+        for zoom in (8, 13, 17):
+            d = 0.6 if zoom < 12 else 0.02
+            body = client.get(
+                "/api/map/prices",
+                params={
+                    "bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}",
+                    "zoom": zoom, "year": 2025,
+                },
+            ).json()
+            assert body["areas"] == [], f"{name} at z{zoom} returned areas"
+            assert body["properties"] == [], f"{name} at z{zoom} returned properties"
+            assert body["status"] != "OK", f"{name} at z{zoom} reported OK"
+
+    @pytest.mark.parametrize("name,lat,lon", NO_PRICES)
+    def test_the_reason_is_given_rather_than_a_bare_refusal(
+        self, client, name, lat, lon
     ):
-        resp = client.get("/api/coverage/at", params={"lat": lat, "lon": lon})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "OK", f"{name} should be covered"
-        entry = body["entry"]
-        assert entry is not None
-        assert entry["transaction_level_data"] is False, (
-            f"{name} claims individual sales data it does not have"
-        )
-        assert entry["max_precision"] == "CITY_REGIONAL"
-        assert entry["forecast_supported"] is False, (
-            f"{name} claims forecasts, but an index has no price level to project"
-        )
-        assert entry["currency_code"] == currency
-        # The notes must say plainly that this is an index, not a price.
-        assert "index" in (entry["notes"] or "").lower()
-        assert entry["sources"], f"{name} cites no source"
+        """`entry` is withheld for an unsupported place, by design — so the
+        explanation has to travel in `message`, and it must be the specific
+        one from the registry, not the generic sentence."""
+        body = client.get(
+            "/api/coverage/at", params={"lat": lat, "lon": lon}
+        ).json()
+        assert body["status"] == "UNSUPPORTED_LOCATION"
+        assert body["entry"] is None, "an unsupported place must not carry an entry"
+        message = (body["message"] or "").lower()
+        assert "index" in message, f"{name} does not mention the index"
+        assert "no property prices are published" in message, name
 
-    @pytest.mark.parametrize("name,lat,lon,currency", STATISTICS_ONLY)
-    def test_area_figures_carry_growth_but_never_a_price(
-        self, client, name, lat, lon, currency
-    ):
-        d = 0.6
-        resp = client.get(
-            "/api/map/prices",
-            params={
-                "bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}",
-                "zoom": 8,
-                "year": 2025,
-            },
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "OK", f"{name}: {body.get('message')}"
-        assert body["areas"], f"{name} returned no area statistics"
-        assert body["properties"] == [], f"{name} returned individual dwellings"
-
-        for area in body["areas"]:
-            assert area["basis"] == "OFFICIAL_INDEX", area
-            # THE central assertion: an index must never yield a price.
-            assert area["has_price_level"] is False, (
-                f"{name} claims a price level derived from an index"
-            )
-            assert area["median_price"] is None, (
-                f"{name} produced a price of {area['median_price']} from an index"
-            )
-            assert area["p25_price"] is None and area["p75_price"] is None
-            assert area["index_value"] is not None
-            assert area["growth_1y_pct"] is not None, (
-                f"{name} has neither a price nor a growth rate — nothing to show"
-            )
-            assert area["precision_level"] == "CITY_REGIONAL"
-
-    @pytest.mark.parametrize("name,lat,lon,currency", STATISTICS_ONLY)
-    def test_individual_property_requests_are_refused(
-        self, client, name, lat, lon, currency
-    ):
-        d = 0.02
-        resp = client.get(
-            "/api/map/prices",
-            params={
-                "bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}",
-                "zoom": 17,
-                "year": 2025,
-            },
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] != "OK", f"{name} served individual dwellings"
-        assert body["properties"] == []
-        assert body["areas"] == []
-        assert "area statistics only" in (body["message"] or "").lower()
-
-    @pytest.mark.parametrize("name,lat,lon,currency", STATISTICS_ONLY)
-    def test_forecasts_are_refused(self, client, name, lat, lon, currency):
-        """An index has no price level, so there is nothing to project."""
-        resp = client.get(
-            "/api/location/forecast", params={"lat": lat, "lon": lon, "year": 2030}
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] != "OK", f"{name} produced a forecast"
-        assert "market_movement_pct" not in body
-
-    @pytest.mark.parametrize("name,lat,lon,currency", STATISTICS_ONLY)
-    def test_future_years_show_nothing_rather_than_a_projection(
-        self, client, name, lat, lon, currency
-    ):
-        d = 0.6
-        resp = client.get(
-            "/api/map/prices",
-            params={
-                "bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}",
-                "zoom": 8,
-                "year": 2031,
-            },
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["is_future"] is True
-        # No price level means no defensible projection.
-        assert body["areas"] == [], f"{name} projected an index with no price level"
+    @pytest.mark.parametrize("name,lat,lon", NO_PRICES)
+    def test_they_are_not_listed_as_supported(self, client, name, lat, lon):
+        body = client.get("/api/coverage").json()
+        supported = {e["country_iso2"] for e in body["supported"]}
+        absent = {e["country_iso2"] for e in body["known_absences"]}
+        iso = client.get(
+            "/api/coverage/at", params={"lat": lat, "lon": lon}
+        ).json()["country_iso2"]
+        assert iso not in supported, f"{name} ({iso}) is listed as supported"
+        assert iso in absent, f"{name} ({iso}) is missing from known_absences"
 
 
 @pytest.mark.db
-class TestRealSalesBeatAnIndex:
-    """A country may hold both real sales and an official index for one year.
+class TestEveryFigureShownIsRealMoney:
+    """Nothing reaches the map without an actual monetary value behind it."""
 
-    France does: recorded sales for 2021-2023 and a Eurostat series throughout.
-    Two things must hold. Exactly ONE figure per country reaches the map, and
-    when there is a choice it is the measured one — a real median beats a
-    measure of change.
-    """
+    VIEWPORTS = [
+        ("Europe", "-10,36,30,60", 4),
+        ("British Isles", "-11,49,2,59", 6),
+        ("Nordics", "5,54,31,70", 5),
+        ("North America", "-125,25,-66,50", 4),
+        ("Asia", "95,-10,145,40", 4),
+    ]
 
-    EUROPE = "-10,36,30,60"
-
-    def test_one_figure_per_country(self, client):
-        for year in (2022, 2025):
-            resp = client.get(
-                "/api/map/prices",
-                params={"bbox": self.EUROPE, "zoom": 4, "year": year},
-            )
-            assert resp.status_code == 200
-            areas = resp.json()["areas"]
-            names = [a["area_name"] for a in areas]
-            duplicated = {n for n in names if names.count(n) > 1}
-            assert not duplicated, (
-                f"{year}: several markers for the same country: {duplicated}"
-            )
-
-    def test_a_measured_median_is_preferred_over_an_index(self, client):
-        """2022 is a year France has real recorded sales for."""
-        resp = client.get(
+    @pytest.mark.parametrize("name,bbox,zoom", VIEWPORTS)
+    @pytest.mark.parametrize("year", [2022, 2025])
+    def test_no_area_is_returned_without_a_price(
+        self, client, name, bbox, zoom, year
+    ):
+        body = client.get(
             "/api/map/prices",
-            params={"bbox": self.EUROPE, "zoom": 4, "year": 2022},
-        )
-        france = [a for a in resp.json()["areas"] if a["area_name"] == "France"]
-        assert len(france) == 1, "France should appear exactly once"
-        assert france[0]["basis"] == "TRANSACTIONS", (
-            "an index was served for a year with real recorded sales"
-        )
-        assert france[0]["median_price"] is not None
-        assert france[0]["has_price_level"] is True
+            params={"bbox": bbox, "zoom": zoom, "year": year},
+        ).json()
+        for area in body["areas"]:
+            assert area["median_price"] is not None, (
+                f"{name} {year}: {area['area_name']} has no price"
+            )
+            assert area["has_price_level"] is True
+            assert area["basis"] != "OFFICIAL_INDEX", (
+                f"{name} {year}: {area['area_name']} came from an index"
+            )
+            assert area["median_price"] > 0
 
-    def test_the_index_is_used_only_where_there_are_no_sales(self, client):
-        """2025 has no French sales loaded, so the index is all there is."""
-        resp = client.get(
+    @pytest.mark.parametrize("name,bbox,zoom", VIEWPORTS)
+    def test_one_figure_per_area(self, client, name, bbox, zoom):
+        body = client.get(
             "/api/map/prices",
-            params={"bbox": self.EUROPE, "zoom": 4, "year": 2025},
-        )
-        france = [a for a in resp.json()["areas"] if a["area_name"] == "France"]
-        assert len(france) == 1
-        assert france[0]["basis"] == "OFFICIAL_INDEX"
-        # And it must still refuse to state a price.
-        assert france[0]["median_price"] is None
-        assert france[0]["has_price_level"] is False
-        assert france[0]["growth_1y_pct"] is not None
+            params={"bbox": bbox, "zoom": zoom, "year": 2025},
+        ).json()
+        names = [a["area_name"] for a in body["areas"]]
+        duplicated = {n for n in names if names.count(n) > 1}
+        assert not duplicated, f"{name}: duplicated areas {duplicated}"
+
+    def test_france_shows_its_own_recorded_sales(self, client):
+        """France has real sales for 2022; they must be what is shown."""
+        body = client.get(
+            "/api/map/prices",
+            params={"bbox": "-5,42,9,51", "zoom": 6, "year": 2022},
+        ).json()
+        assert body["status"] == "OK"
+        assert body["areas"], "France returned nothing for a year it has data"
+        for area in body["areas"]:
+            assert area["basis"] == "TRANSACTIONS"
+            assert area["currency"] == "EUR"
 
 
 @pytest.mark.db

@@ -33,162 +33,60 @@ database, measured on 3 September 2026.
 
 ## What "supported" means here
 
-Coverage comes in two grades, and the API never blurs them.
+**A figure is shown only where real money stands behind it.** Countries that
+publish only a house price index show nothing at all — an index measures change
+("prices moved 4.2%"), never what a home costs, and a percentage on a map where
+everything else is a price is worse than an honest blank.
 
-**Transaction-level** — we hold the individual recorded sales, so the map can
-show a specific dwelling and value it.
+**Transaction-level** — individual recorded sales, so the map can show a
+specific dwelling and value it.
 
-| Jurisdiction | Transactions | Coordinates | Floor area | Index | Forecast |
-|---|---|---|---|---|---|
-| England & Wales | ✅ 2021–2026 | postcode centroid | ⚠️ needs EPC key | ✅ official | ✅ |
-| France (8 metros) | ✅ 2021–2023 | ✅ **cadastral parcel** | ✅ **every record** | ⚠️ derived | ❌ history too short |
+| Jurisdiction | Sales | Coordinates | Floor area | Forecast |
+|---|---|---|---|---|
+| England & Wales | 5,428,239 (2021–2026) | postcode centroid | ⚠️ needs EPC key | ✅ |
+| France (8 metros) | 593,555 (2021–2023) | ✅ **cadastral parcel** | ✅ every record | ❌ history too short |
 
-**Area-level prices** — three further countries publish real money, but nothing
-that can be placed on an individual dwelling. Figures are per county or
-province.
+**Area-level prices** — real money, but nothing that can be placed on an
+individual dwelling.
 
 | Jurisdiction | Figure | Statistic | Areas | Source |
 |---|---|---|---|---|
-| Ireland | €, from 630,247 recorded sales | **median** | 26 counties | [Property Price Register](https://propertypriceregister.ie/) |
-| Netherlands | €, published average | **mean** | 12 provinces + national | [CBS 83625NED](https://opendata.cbs.nl/statline/#/CBS/nl/dataset/83625NED/table) |
-| Denmark | kr, published average | **mean** | 5 regions + national | [Statistics Denmark EJEN77](https://www.statbank.dk/EJEN77) |
+| Ireland | € from 630,247 recorded sales | **median** | 26 counties | [Property Price Register](https://propertypriceregister.ie/) |
+| Singapore | S$ from 240,345 resale records | **median** | national | [data.gov.sg HDB resale](https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view) |
+| Netherlands | € published average | **mean** | 12 provinces + national | [CBS 83625NED](https://opendata.cbs.nl/statline/#/CBS/nl/dataset/83625NED/table) |
+| Sweden | kr published average | **mean** | 21 counties + national | [SCB BO0501](https://www.statistikdatabasen.scb.se/pxweb/en/ssd/START__BO__BO0501/) |
+| Denmark | kr published average | **mean** | 5 regions + national | [Statistics Denmark EJEN77](https://www.statbank.dk/EJEN77) |
 
 The mean/median column is not pedantry. House prices are right-skewed, so a
 mean sits well above a median for the same market — presenting one as the other
-overstates typical prices. Every row records which it is (`price_statistic`),
-and the map labels each marker `· median` or `· avg` so two countries are never
-silently compared on different measures.
+overstates typical prices. Every row records which it is, and each marker is
+labelled `· median` or `· avg` so two countries are never silently compared on
+different measures.
 
-**Index-only** — 26 further jurisdictions publish an official house price
-**index** and nothing else. An index is based at 100 in a reference year: it
-says prices rose 4.2%, *not* that a house costs €380,000. Deriving a price from
-it would need a base-year price nobody publishes, so these areas carry **no
-price level at all** — `median_price` is `null`, `has_price_level` is `false`,
-and the map shows a growth rate instead of a number that looks like a price.
+Each source also has real limits, stated in the registry and returned by the
+API: Singapore covers HDB public housing only (roughly four in five residents,
+but no private condominiums, so it sits below an all-market figure); Sweden
+covers houses but not tenant-owned flats; Denmark covers single-family houses
+in arm's-length sales; Ireland excludes non-market transfers and VAT-exclusive
+new builds.
 
-| Source | Jurisdictions | Granularity |
-|---|---|---|
-| [Eurostat `prc_hpi_q`](https://ec.europa.eu/eurostat/databrowser/view/prc_hpi_q/default/table) | 25 European countries | national |
-| [US FHFA HPI](https://www.fhfa.gov/data/hpi) | United States | national + 51 states |
+**Everywhere else shows nothing.** Twenty-five further countries publish an
+official index, which is held in `market_indices` and used where it is valid,
+but is never rendered as a price. They are registered as uncovered *with the
+reason*, so the API answers:
 
-Eurostat publishes no price-level dataset at all — the catalogue was searched,
+> No property prices are published for this country. An official house price
+> index exists at national level only, but an index measures change only — it
+> says how much prices moved, not what a home costs — and no price level or
+> individual sale records are published openly here.
+
+Scotland and Northern Ireland are registered the same way: HM Land Registry
+Price Paid Data covers England and Wales only.
+
+Eurostat publishes no price-level dataset at all — its catalogue was searched,
 and every housing series it carries is an index or a ratio. There is no
-pan-European source of actual prices, which is why each country above required
+pan-European source of actual prices, which is why each country above needed
 its own national statistics office.
-
-So Berlin, Madrid, Warsaw and Los Angeles show real, sourced figures where they
-used to show nothing — and still refuse to price an individual house, because
-nobody publishes the sales that would justify one.
-
-**Nothing at all** — Scotland, Northern Ireland, and every country not listed
-above. Scotland and Northern Ireland are **registered as having no data**, with
-the reason returned by the API: HM Land Registry Price Paid Data covers England
-and Wales only. Searching Edinburgh moves the map and tells you that.
-
-Japan, Australia, Canada, India, Brazil and most of Asia and Africa are absent
-because open transaction data does not exist for them, not because the code
-cannot reach it. Two known routes in are gated behind a free API key that has
-not been wired up (Japan's MLIT transaction API, and US Census ACS for real
-dollar price levels by county); both are documented in
-[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
-
----
-
-## The interface
-
-The map fills the viewport. A floating rounded search bar sits top-left, a
-floating timeline top-centre, mode and filter controls top-right, and clicking a
-marker opens a side panel (a bottom sheet under 768 px).
-
-Price markers are white rounded pills above a dark teardrop pin, tinted on their
-leading edge by price type. Marker density is thinned server-side to one
-dwelling per screen-space grid cell, so the map stays readable as you zoom.
-
-> **Screenshots** are not committed to the repository. To capture them, run
-> `make dev` and open <http://localhost:3000/?lat=52.0243&lon=-0.7548&z=16.1&year=2026>
-> (a residential area of Milton Keynes with dense coverage), then click a
-> marker to open the panel. The UI was verified visually during development at
-> the property, street, neighbourhood and city tiers, and in the past, present
-> and forecast states.
-
-### The four kinds of price are never conflated
-
-This is the central product rule (and the hardest thing to get right). Each has
-its own badge, its own colour, its own heading, and its own marker shape on the
-history chart:
-
-| Badge | Meaning | Colour | Chart mark |
-|---|---|---|---|
-| `SOLD` | a genuine recorded sale | near-black | filled diamond, solid line |
-| `ESTIMATE` | modelled current value | blue | hollow circle, dashed line |
-| `HISTORICAL ESTIMATE` | modelled value at a past date | violet | hollow circle, dashed line |
-| `FORECAST` | statistical projection | orange | hollow square, dotted line, tinted field, shaded interval |
-| `AREA STATISTIC` | a median across an area | teal | — |
-
-A single continuous line through all of them would imply every point is a
-recorded sale. The chart deliberately breaks its stroke where the nature of the
-data changes.
-
----
-
-## Quick start
-
-Requires **PostgreSQL 17+ with PostGIS**, **Python 3.12**, and **Node 20+**.
-
-```bash
-git clone <this-repo> && cd RE-Maps
-cp .env.example .env          # then set NOMINATIM_EMAIL to a real address
-
-make setup                    # Python venv + npm install
-make db-create                # createdb + CREATE EXTENSION postgis
-make migrate                  # apply migrations 001–011
-
-make data-download            # ~3.5 GB of open data (see below)
-make ingest                   # load it all; resumable, ~30 min
-make evaluate                 # measure the AVM, calibrate forecast intervals
-
-make dev                      # API on :8000, frontend on :3000
-```
-
-Then open <http://localhost:3000>.
-
-### macOS / Homebrew
-
-```bash
-brew install postgresql@18 postgis node
-brew services start postgresql@18
-```
-
-If PostgreSQL fails to start with *"postmaster became multithreaded during
-startup"*, start it with a locale set:
-
-```bash
-LC_ALL=C pg_ctl -D $(brew --prefix)/var/postgresql@18 start
-```
-
-### Disk space
-
-The full ingestion is storage-hungry. On this machine, the loaded database is
-**5.4 GB** for 5.07M transactions, plus ~3.5 GB of raw downloads (which can be
-deleted afterwards — `make data-download` re-fetches them).
-
-Two knobs control the footprint:
-
-```bash
-make data-download PPD_YEARS="2023 2024 2025 2026"   # fewer UK years
-make ingest-fr FR_DEPTS="75 69"                      # fewer French departments
-```
-
-To load **all** of France, pass `FR_DEPTS=""`. To load Price Paid back to 1995,
-extend `PPD_YEARS`. The coverage registry reads the loaded range from the data,
-so the timeline adjusts automatically — no code change needed.
-
-### If ingestion is interrupted
-
-It is resumable. `ingestion_runs` records every unit with a file signature, and
-re-running `make ingest` skips what already completed and re-does what did not.
-
----
 
 ## Data sources
 

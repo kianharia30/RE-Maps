@@ -89,6 +89,11 @@ picked AS (
     -- absent.
     WHERE a.area_level = 'country'
       AND a.segment = %(segment)s
+  -- A real monetary figure or nothing (see above).
+  AND a.median_price IS NOT NULL
+      -- A real monetary figure or nothing. An index-only row carries
+      -- a growth rate and no price, and is not shown.
+      AND a.median_price IS NOT NULL
       AND a.year = %(year)s
       AND ST_Intersects(c.geom, box.g)
       AND GeometryType(ST_Intersection(c.geom, box.g)) LIKE '%%POLYGON'
@@ -136,6 +141,11 @@ picked AS (
     WHERE a.country_iso2 = %(country)s
       AND a.area_level = %(level)s
       AND a.segment = %(segment)s
+  -- A real monetary figure or nothing (see above).
+  AND a.median_price IS NOT NULL
+      -- A real monetary figure or nothing. An index-only row carries
+      -- a growth rate and no price, and is not shown.
+      AND a.median_price IS NOT NULL
       AND a.year = %(year)s
       AND ST_Intersects(r.geom, box.g)
       AND GeometryType(ST_Intersection(r.geom, box.g)) LIKE '%%POLYGON'
@@ -169,6 +179,8 @@ LEFT JOIN area_stats prev
 WHERE a.country_iso2 = %(country)s
   AND a.area_level = %(level)s
   AND a.segment = %(segment)s
+  -- A real monetary figure or nothing (see above).
+  AND a.median_price IS NOT NULL
   AND a.year = %(year)s
   AND a.geom && ST_MakeEnvelope(%(w)s, %(s)s, %(e)s, %(n)s, 4326)
 ORDER BY a.transaction_count DESC

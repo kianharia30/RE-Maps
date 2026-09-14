@@ -252,6 +252,29 @@ SOURCES: list[dict] = [
         "source_published_at": None,
     },
     {
+        "key": "se_scb_prices",
+        "name": "Real estate prices for one- and two-dwelling buildings (BO0501)",
+        "owner": "Statistiska centralbyrån (Statistics Sweden)",
+        "url": "https://www.statistikdatabasen.scb.se/pxweb/en/ssd/START__BO__BO0501/",
+        "documentation_url": "https://www.scb.se/en/services/open-data-api/",
+        "licence": "CC0 1.0 (SCB open data)",
+        "licence_url": "https://www.scb.se/en/About-us/about-the-website-and-terms-of-use/",
+        "attribution": "Source: Statistics Sweden (SCB), real estate prices BO0501.",
+        "allowed_use": (
+            "Free re-use. Figures are the MEAN purchase price, not the median, "
+            "and cover one- and two-dwelling buildings for permanent living — "
+            "houses. Tenant-owned flats ('bostadsrätter') are a separate legal "
+            "form held in a separate table and are NOT included, so these "
+            "figures understate the cost of city housing, where flats "
+            "dominate. Holiday homes and agricultural property are also "
+            "excluded."
+        ),
+        "update_frequency": "Annual",
+        "geographic_coverage": "Sweden, national and 21 counties",
+        "historical_coverage": "2000 onwards",
+        "source_published_at": None,
+    },
+    {
         "key": "natural_earth_admin0",
         "name": "Natural Earth Admin 0 - Countries (10m)",
         "owner": "Natural Earth",

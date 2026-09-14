@@ -225,28 +225,41 @@ area_evidence AS (
            sum(a.transaction_count) FILTER (WHERE a.median_price IS NOT NULL) AS sale_count
     FROM area_stats a
     GROUP BY a.country_iso2
+),
+-- Driven by the DATA, not by one source. A country qualifies if it has priced
+-- area statistics (Singapore, from HDB resale records, has no index at all) OR
+-- an index series (Germany, which has nothing else). Keying this off
+-- market_indices alone silently omitted every country whose only evidence was
+-- a price.
+candidates AS (
+    SELECT country_iso2 FROM area_evidence WHERE has_price_level
+    UNION
+    SELECT DISTINCT country_iso2 FROM market_indices
+    WHERE source_key = ANY(%(sources)s::text[])
 )
-SELECT m.country_iso2,
+SELECT k.country_iso2,
        c.name  AS country_name,
        coalesce(e.price_currency, c.currency_code) AS currency_code,
        min(m.period) AS from_period,
        max(m.period) AS to_period,
-       max(m.source_key) AS source_key,
+       coalesce(max(m.source_key), e.price_source) AS source_key,
        count(DISTINCT m.area_code) AS areas,
-       max(m.area_level) AS area_level,
+       coalesce(max(m.area_level), 'national') AS area_level,
        coalesce(e.has_price_level, false) AS has_price_level,
        e.price_level_name, e.price_areas, e.price_from, e.price_to,
        e.price_source, e.sale_count, e.price_statistic, e.price_basis
-FROM market_indices m
-JOIN countries c ON c.iso2 = m.country_iso2
-LEFT JOIN area_evidence e ON e.country_iso2 = m.country_iso2
-WHERE m.source_key = ANY(%(sources)s::text[])
-  AND m.country_iso2 NOT IN (SELECT country_iso2 FROM txn_countries)
-GROUP BY m.country_iso2, c.name, c.currency_code, e.has_price_level,
+FROM candidates k
+JOIN countries c ON c.iso2 = k.country_iso2
+LEFT JOIN area_evidence e ON e.country_iso2 = k.country_iso2
+LEFT JOIN market_indices m
+       ON m.country_iso2 = k.country_iso2
+      AND m.source_key = ANY(%(sources)s::text[])
+WHERE k.country_iso2 NOT IN (SELECT country_iso2 FROM txn_countries)
+GROUP BY k.country_iso2, c.name, c.currency_code, e.has_price_level,
          e.price_level_name, e.price_areas, e.price_from, e.price_to,
          e.price_source, e.price_currency, e.sale_count, e.price_statistic,
          e.price_basis
-ORDER BY m.country_iso2
+ORDER BY k.country_iso2
 """
 
 # Sources that publish an index but no price level.
@@ -297,7 +310,8 @@ def register_statistics_only() -> int:
                             if row["price_statistic"] == "MEAN"
                             else "Median prices"
                         )
-                        + f" for {row['price_areas']} {level}-level areas, "
+                        + f" for {row['price_areas']} {level}-level "
+                        + ("area, " if row["price_areas"] == 1 else "areas, ")
                         + (
                             "published by the national statistics office"
                             if row["price_basis"] == "OFFICIAL_STATISTIC"
@@ -318,6 +332,18 @@ def register_statistics_only() -> int:
                     "national level only" if row["areas"] == 1
                     else f"{row['areas']} {row['area_level']}-level areas"
                 )
+                # Registered as having NO usable data, deliberately.
+                #
+                # We hold a real index for this country, but an index is a
+                # measure of change with no monetary value attached, and a
+                # growth rate on its own is not what this map is for. Rather
+                # than show a percentage where every other country shows a
+                # price, the country is recorded as uncovered — with the
+                # reason, so the API can say WHY rather than shrug.
+                #
+                # The index itself stays in `market_indices`; it is real data
+                # and a source of actual prices may appear later, at which
+                # point this row is replaced by a priced one automatically.
                 entry = {
                     "provider_key": "official_statistics",
                     "country_iso2": row["country_iso2"],
@@ -326,20 +352,21 @@ def register_statistics_only() -> int:
                     "transaction_level_data": False,
                     "property_characteristics": False,
                     "market_index": True,
-                    # An index has no price level to project, so a monetary
-                    # forecast is not possible even though the series is long.
                     "forecast_supported": False,
-                    "max_precision": "CITY_REGIONAL",
-                    "coordinate_precision": "REGION",
+                    "max_precision": "NONE",
+                    # NULL, matching the Scotland and Northern Ireland rows:
+                    # there are no coordinates because there is nothing to
+                    # place. "NONE" is not a member of the enum.
+                    "coordinate_precision": None,
                     "historical_from": row["from_period"],
                     "historical_to": row["to_period"],
                     "currency_code": row["currency_code"],
                     "notes": (
-                        f"Covered by an official house price index at "
-                        f"{granularity}. This is an INDEX, not a price level: "
-                        "it shows how prices have changed, but no monetary "
-                        "value and no individual property data are available "
-                        "for this country. Individual sales are not published "
+                        "No property prices are published for this country. "
+                        f"An official house price index exists at {granularity}"
+                        ", but an index measures change only — it says how much "
+                        "prices moved, not what a home costs — and no price "
+                        "level or individual sale records are published "
                         "openly here."
                     ),
                     "source_keys": [row["source_key"]],

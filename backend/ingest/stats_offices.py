@@ -43,6 +43,7 @@ log = logging.getLogger(__name__)
 
 NL_SOURCE_KEY = "nl_cbs_prices"
 DK_SOURCE_KEY = "dk_statbank_prices"
+SE_SOURCE_KEY = "se_scb_prices"
 
 # CBS 83625NED: "Bestaande koopwoningen; gemiddelde verkoopprijzen, regio".
 # Annual, 1995 onwards, in euro.
@@ -314,10 +315,118 @@ def ingest_denmark() -> dict[str, int]:
     return {"written": written}
 
 
+# --- Sweden ---------------------------------------------------------------
+#
+# SCB BO0501B/FastprisPSRegAr: sold one- and two-dwelling buildings for
+# permanent living, by county, annual. Covers houses rather than flats --
+# tenant-owned flats ("bostadsrätter") are a separate legal form and a separate
+# table -- so this understates prices in the cities, where flats dominate.
+SE_URL = (
+    "https://api.scb.se/OV0104/v1/doris/en/ssd/BO/BO0501/BO0501B/"
+    "FastprisPSRegAr"
+)
+SE_PRICE_CODE = "BO0501O4"   # purchase price, average, 1 000 SEK
+SE_COUNT_CODE = "BO0501O3"   # number of sales
+# SCB labels counties "<Name> county"; Natural Earth drops the suffix and
+# transliterates one name.
+SE_REGION_ALIASES = {"Örebro": "Orebro"}
+# County codes only: the "Greater <city>" and national rows would double-count.
+SE_COUNTY_CODES = [
+    "01", "03", "04", "05", "06", "07", "08", "09", "10", "12", "13", "14",
+    "17", "18", "19", "20", "21", "22", "23", "24", "25",
+]
+
+
+def ingest_sweden() -> dict[str, int]:
+    register_sources()
+    run_id = start_run(SE_SOURCE_KEY, "scb-FastprisPSRegAr")
+    written = 0
+    rows: dict[tuple[str, str, int], tuple[float, int | None, str]] = {}
+    try:
+        body = json.dumps({
+            "query": [
+                {"code": "Region", "selection": {
+                    "filter": "item", "values": ["00", *SE_COUNTY_CODES]}},
+                {"code": "ContentsCode", "selection": {
+                    "filter": "item",
+                    "values": [SE_PRICE_CODE, SE_COUNT_CODE]}},
+            ],
+            "response": {"format": "json-stat2"},
+        }).encode()
+        req = urllib.request.Request(
+            SE_URL, data=body,
+            headers={"Content-Type": "application/json",
+                     "User-Agent": "RE-Maps/0.1 (property price map)"},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            payload = json.loads(resp.read())
+
+        dims = payload["dimension"]
+        order = payload["id"]
+        sizes = payload["size"]
+        values = payload["value"]
+        region_pos = {v: k for k, v in dims["Region"]["category"]["index"].items()}
+        region_label = dims["Region"]["category"]["label"]
+        time_pos = {v: k for k, v in dims["Tid"]["category"]["index"].items()}
+        content_pos = {
+            v: k for k, v in dims["ContentsCode"]["category"]["index"].items()
+        }
+        r_axis = order.index("Region")
+        t_axis = order.index("Tid")
+        c_axis = order.index("ContentsCode")
+
+        prices: dict[tuple[str, int], float] = {}
+        counts: dict[tuple[str, int], float] = {}
+        total = 1
+        for size in sizes:
+            total *= size
+        for flat in range(total):
+            rest, coords = flat, [0] * len(sizes)
+            for axis in range(len(sizes) - 1, -1, -1):
+                coords[axis] = rest % sizes[axis]
+                rest //= sizes[axis]
+            value = values[str(flat)] if isinstance(values, dict) else values[flat]
+            if value is None:
+                continue
+            code = region_pos[coords[r_axis]]
+            year = int(time_pos[coords[t_axis]])
+            target = (
+                prices if content_pos[coords[c_axis]] == SE_PRICE_CODE
+                else counts
+            )
+            target[(code, year)] = float(value)
+
+        for (code, year), price in prices.items():
+            if code == "00":
+                level, name = "country", "Sweden"
+            else:
+                level = "county"
+                raw = region_label[code].replace(" county", "").strip()
+                name = SE_REGION_ALIASES.get(raw, raw)
+            count = counts.get((code, year))
+            rows[(level, name, year)] = (
+                price * 1000,                       # 1 000 SEK -> SEK
+                int(count) if count else None,
+                f"SE-{code}",
+            )
+
+        with sync_conn() as conn:
+            written = _write(conn, rows, "SE", "SEK", SE_SOURCE_KEY)
+            conn.commit()
+    except Exception as exc:
+        finish_run(run_id, "failed", len(rows), written, 0, error=str(exc))
+        raise
+
+    finish_run(run_id, "complete", len(rows), written, 0)
+    log.info("Sweden SCB: %s area-year average prices", f"{written:,}")
+    return {"written": written}
+
+
 def ingest() -> dict:
     return {
         "netherlands": ingest_netherlands(),
         "denmark": ingest_denmark(),
+        "sweden": ingest_sweden(),
     }
 
 
