@@ -119,11 +119,14 @@ export interface AreaStat {
   p25_price: number | null;
   p75_price: number | null;
   median_price_per_sqm: number | null;
-  transaction_count: number;
+  /** null where the publisher does not disclose the sample size. */
+  transaction_count: number | null;
   currency: string;
   precision_level: PrecisionLevel;
   /** TRANSACTIONS = real recorded sales; OFFICIAL_INDEX = index only. */
   basis: string;
+  /** MEDIAN (computed from individual sales) or MEAN (published average). */
+  price_statistic: string;
   index_value: number | null;
   has_price_level: boolean;
   /** Span of sales the median covers; wider than one year for live tiers. */

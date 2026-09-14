@@ -10,6 +10,7 @@ false and the API honestly reports no coverage.
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from app.db import sync_conn
 from app.providers.fr.provider import register_coverage_row as fr_row
@@ -206,20 +207,45 @@ def register() -> int:
 STATS_ONLY_SQL = """
 WITH txn_countries AS MATERIALIZED (
     SELECT DISTINCT country_iso2 FROM transactions
+),
+-- What kind of evidence each country actually has at area level. A country
+-- with a real median (Ireland, from 630,000 recorded sales) must not be
+-- described the same way as one with only an index (Germany).
+area_evidence AS (
+    SELECT a.country_iso2,
+           bool_or(a.median_price IS NOT NULL) AS has_price_level,
+           max(a.area_level)   FILTER (WHERE a.median_price IS NOT NULL) AS price_level_name,
+           count(DISTINCT a.area_code) FILTER (WHERE a.median_price IS NOT NULL) AS price_areas,
+           min(a.year)         FILTER (WHERE a.median_price IS NOT NULL) AS price_from,
+           max(a.year)         FILTER (WHERE a.median_price IS NOT NULL) AS price_to,
+           max(a.source_key)   FILTER (WHERE a.median_price IS NOT NULL) AS price_source,
+           max(a.price_statistic) FILTER (WHERE a.median_price IS NOT NULL) AS price_statistic,
+           max(a.basis)        FILTER (WHERE a.median_price IS NOT NULL) AS price_basis,
+           max(a.currency_code) FILTER (WHERE a.median_price IS NOT NULL) AS price_currency,
+           sum(a.transaction_count) FILTER (WHERE a.median_price IS NOT NULL) AS sale_count
+    FROM area_stats a
+    GROUP BY a.country_iso2
 )
 SELECT m.country_iso2,
        c.name  AS country_name,
-       c.currency_code,
+       coalesce(e.price_currency, c.currency_code) AS currency_code,
        min(m.period) AS from_period,
        max(m.period) AS to_period,
        max(m.source_key) AS source_key,
        count(DISTINCT m.area_code) AS areas,
-       max(m.area_level) AS area_level
+       max(m.area_level) AS area_level,
+       coalesce(e.has_price_level, false) AS has_price_level,
+       e.price_level_name, e.price_areas, e.price_from, e.price_to,
+       e.price_source, e.sale_count, e.price_statistic, e.price_basis
 FROM market_indices m
 JOIN countries c ON c.iso2 = m.country_iso2
+LEFT JOIN area_evidence e ON e.country_iso2 = m.country_iso2
 WHERE m.source_key = ANY(%(sources)s::text[])
   AND m.country_iso2 NOT IN (SELECT country_iso2 FROM txn_countries)
-GROUP BY m.country_iso2, c.name, c.currency_code
+GROUP BY m.country_iso2, c.name, c.currency_code, e.has_price_level,
+         e.price_level_name, e.price_areas, e.price_from, e.price_to,
+         e.price_source, e.price_currency, e.sale_count, e.price_statistic,
+         e.price_basis
 ORDER BY m.country_iso2
 """
 
@@ -241,35 +267,83 @@ def register_statistics_only() -> int:
             rows = cur.fetchall()
 
         for row in rows:
-            granularity = (
-                "national level only" if row["areas"] == 1
-                else f"{row['areas']} {row['area_level']}-level areas"
-            )
-            entry = {
-                "provider_key": "official_statistics",
-                "country_iso2": row["country_iso2"],
-                "region_code": None,
-                "region_name": row["country_name"],
-                "transaction_level_data": False,
-                "property_characteristics": False,
-                "market_index": True,
-                # An index has no price level to project, so a monetary
-                # forecast is not possible even though the series is long.
-                "forecast_supported": False,
-                "max_precision": "CITY_REGIONAL",
-                "coordinate_precision": "REGION",
-                "historical_from": row["from_period"],
-                "historical_to": row["to_period"],
-                "currency_code": row["currency_code"],
-                "notes": (
-                    f"Covered by an official house price index at "
-                    f"{granularity}. This is an INDEX, not a price level: it "
-                    "shows how prices have changed, but no monetary value and "
-                    "no individual property data are available for this "
-                    "country. Individual sales are not published openly here."
-                ),
-                "source_keys": [row["source_key"]],
-            }
+            if row["has_price_level"]:
+                # A real price level at area level: the map can show money.
+                level = row["price_level_name"] or "area"
+                entry = {
+                    "provider_key": "official_statistics",
+                    "country_iso2": row["country_iso2"],
+                    "region_code": None,
+                    "region_name": row["country_name"],
+                    # Still false: we publish area medians, not the individual
+                    # sales, so no dwelling-level figure is available.
+                    "transaction_level_data": False,
+                    "property_characteristics": False,
+                    "market_index": True,
+                    "forecast_supported": False,
+                    "max_precision": "CITY_REGIONAL",
+                    "coordinate_precision": "REGION",
+                    "historical_from": date(int(row["price_from"]), 1, 1),
+                    "historical_to": date(int(row["price_to"]), 12, 31),
+                    "currency_code": row["currency_code"],
+                    # The wording has to match the figure exactly. These are
+                    # means for the statistics-office sources and medians where
+                    # we computed them ourselves, and the two are not
+                    # interchangeable for skewed price distributions. A sample
+                    # size is only quoted when the publisher discloses one.
+                    "notes": (
+                        (
+                            "Average (mean) prices"
+                            if row["price_statistic"] == "MEAN"
+                            else "Median prices"
+                        )
+                        + f" for {row['price_areas']} {level}-level areas, "
+                        + (
+                            "published by the national statistics office"
+                            if row["price_basis"] == "OFFICIAL_STATISTIC"
+                            else "computed from recorded sales"
+                        )
+                        + (
+                            f" ({int(row['sale_count']):,} sales)"
+                            if row["sale_count"] else ""
+                        )
+                        + ". Individual property records are not published "
+                        "with usable coordinates here, so figures are "
+                        f"available per {level} rather than per dwelling."
+                    ),
+                    "source_keys": [row["price_source"], row["source_key"]],
+                }
+            else:
+                granularity = (
+                    "national level only" if row["areas"] == 1
+                    else f"{row['areas']} {row['area_level']}-level areas"
+                )
+                entry = {
+                    "provider_key": "official_statistics",
+                    "country_iso2": row["country_iso2"],
+                    "region_code": None,
+                    "region_name": row["country_name"],
+                    "transaction_level_data": False,
+                    "property_characteristics": False,
+                    "market_index": True,
+                    # An index has no price level to project, so a monetary
+                    # forecast is not possible even though the series is long.
+                    "forecast_supported": False,
+                    "max_precision": "CITY_REGIONAL",
+                    "coordinate_precision": "REGION",
+                    "historical_from": row["from_period"],
+                    "historical_to": row["to_period"],
+                    "currency_code": row["currency_code"],
+                    "notes": (
+                        f"Covered by an official house price index at "
+                        f"{granularity}. This is an INDEX, not a price level: "
+                        "it shows how prices have changed, but no monetary "
+                        "value and no individual property data are available "
+                        "for this country. Individual sales are not published "
+                        "openly here."
+                    ),
+                    "source_keys": [row["source_key"]],
+                }
             with conn.cursor() as cur:
                 cur.execute(UPSERT, entry)
             written += 1

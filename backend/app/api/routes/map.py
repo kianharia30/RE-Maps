@@ -74,7 +74,7 @@ picked AS (
            a.year, a.median_price::float8 AS median_price,
            a.p25_price::float8 AS p25_price, a.p75_price::float8 AS p75_price,
            a.median_price_per_sqm::float8 AS median_price_per_sqm,
-           a.index_value::float8 AS index_value, a.basis,
+           a.index_value::float8 AS index_value, a.basis, a.price_statistic,
            a.growth_1y_pct::float8 AS stored_growth,
            a.transaction_count, a.currency_code AS currency,
            a.index_area_code, a.index_area_name,
@@ -110,30 +110,41 @@ LIMIT %(limit)s
 _REGION_AREA_SQL = """
 WITH box AS (
     SELECT ST_MakeEnvelope(%(w)s, %(s)s, %(e)s, %(n)s, 4326) AS g
+),
+-- DISTINCT ON dictates the sort order, so the pick and the presentation order
+-- are separated: choose one row per region here, then order by how much of
+-- each region is actually on screen below. Without that split the "first"
+-- area was whichever had the lowest region_id -- a viewport over Dublin led
+-- with Louth.
+picked AS (
+    SELECT DISTINCT ON (a.region_id)
+           a.area_level, a.area_code, a.area_name,
+           ST_Y(ST_PointOnSurface(ST_Intersection(r.geom, box.g))) AS latitude,
+           ST_X(ST_PointOnSurface(ST_Intersection(r.geom, box.g))) AS longitude,
+           a.year, a.median_price::float8 AS median_price,
+           a.p25_price::float8 AS p25_price, a.p75_price::float8 AS p75_price,
+           a.median_price_per_sqm::float8 AS median_price_per_sqm,
+           a.index_value::float8 AS index_value, a.basis, a.price_statistic,
+           a.growth_1y_pct::float8 AS stored_growth,
+           a.transaction_count, a.currency_code AS currency,
+           a.index_area_code, a.index_area_name,
+           NULL::float8 AS prev_median,
+           ST_Area(ST_Intersection(r.geom, box.g)) AS visible_area
+    FROM area_stats a
+    JOIN regions r ON r.id = a.region_id
+    CROSS JOIN box
+    WHERE a.country_iso2 = %(country)s
+      AND a.area_level = %(level)s
+      AND a.segment = %(segment)s
+      AND a.year = %(year)s
+      AND ST_Intersects(r.geom, box.g)
+      AND GeometryType(ST_Intersection(r.geom, box.g)) LIKE '%%POLYGON'
+    -- Real recorded sales beat an official index for the same region.
+    ORDER BY a.region_id, (a.basis = 'TRANSACTIONS') DESC,
+             a.transaction_count DESC
 )
-SELECT DISTINCT ON (a.region_id) a.area_level, a.area_code, a.area_name,
-       ST_Y(ST_PointOnSurface(ST_Intersection(r.geom, box.g))) AS latitude,
-       ST_X(ST_PointOnSurface(ST_Intersection(r.geom, box.g))) AS longitude,
-       a.year, a.median_price::float8 AS median_price,
-       a.p25_price::float8 AS p25_price, a.p75_price::float8 AS p75_price,
-       a.median_price_per_sqm::float8 AS median_price_per_sqm,
-       a.index_value::float8 AS index_value, a.basis,
-       a.growth_1y_pct::float8 AS stored_growth,
-       a.transaction_count, a.currency_code AS currency,
-       a.index_area_code, a.index_area_name,
-       NULL::float8 AS prev_median
-FROM area_stats a
-JOIN regions r ON r.id = a.region_id
-CROSS JOIN box
-WHERE a.country_iso2 = %(country)s
-  AND a.area_level = %(level)s
-  AND a.segment = %(segment)s
-  AND a.year = %(year)s
-  AND ST_Intersects(r.geom, box.g)
-  AND GeometryType(ST_Intersection(r.geom, box.g)) LIKE '%%POLYGON'
--- Real sales beat an index for the same region, as above.
-ORDER BY a.region_id, (a.basis = 'TRANSACTIONS') DESC,
-         a.transaction_count DESC
+SELECT * FROM picked
+ORDER BY visible_area DESC
 LIMIT %(limit)s
 """
 
@@ -143,7 +154,7 @@ SELECT a.area_level, a.area_code, a.area_name,
        a.year, a.median_price::float8 AS median_price,
        a.p25_price::float8 AS p25_price, a.p75_price::float8 AS p75_price,
        a.median_price_per_sqm::float8 AS median_price_per_sqm,
-       a.index_value::float8 AS index_value, a.basis,
+       a.index_value::float8 AS index_value, a.basis, a.price_statistic,
        a.growth_1y_pct::float8 AS stored_growth,
        a.transaction_count, a.currency_code AS currency,
        a.index_area_code, a.index_area_name,
@@ -181,6 +192,7 @@ SELECT %(level)s AS area_level,
        count(*)::int AS transaction_count,
        max(t.currency_code) AS currency,
        NULL::float8 AS index_value, 'TRANSACTIONS'::text AS basis,
+       'MEDIAN'::text AS price_statistic,
        NULL::float8 AS stored_growth,
        -- Live tiers resolve their index from the modal district in the group.
        (SELECT l.area_code FROM area_index_links l
@@ -487,6 +499,7 @@ async def _multi_country_area_tier(
                 growth_1y_pct=(round(float(growth), 1) if growth is not None else None),
                 precision_level=precision_for_tier(tier),
                 basis=r.get("basis") or "TRANSACTIONS",
+                price_statistic=r.get("price_statistic") or "MEDIAN",
                 index_value=r.get("index_value"),
                 has_price_level=has_level,
             )
@@ -592,10 +605,21 @@ async def _area_tier(
                 row["window_to_year"] = stats_year
         elif candidate == "country":
             attempt = await fetch_all(_COUNTRY_AREA_SQL, params)
-        elif candidate == "state":
-            attempt = await fetch_all(_REGION_AREA_SQL, params | {"level": candidate})
         else:
-            attempt = await fetch_all(_AREA_SQL, params | {"level": candidate})
+            # Prefer the polygon-clipped query wherever the rows carry a real
+            # shape (US states, Irish counties). It is what makes a large
+            # area's figure reachable from a viewport inside it, rather than
+            # only from one that happens to contain a stored point. Levels
+            # whose rows have no region_id — UK districts and sectors, which
+            # are positioned at the centroid of their own sales — fall through
+            # to the point query.
+            attempt = await fetch_all(
+                _REGION_AREA_SQL, params | {"level": candidate}
+            )
+            if not attempt:
+                attempt = await fetch_all(
+                    _AREA_SQL, params | {"level": candidate}
+                )
         if attempt:
             rows, level_used = attempt, candidate
             break
@@ -685,6 +709,7 @@ async def _area_tier(
                 currency=row["currency"] or currency,
                 precision_level=precision,
                 basis=basis,
+                price_statistic=row.get("price_statistic") or "MEDIAN",
                 index_value=row.get("index_value"),
                 has_price_level=has_level,
                 window_from_year=row.get("window_from_year") or year,

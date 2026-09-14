@@ -92,11 +92,18 @@ class AreaStat(BaseModel):
     p25_price: float | None = None
     p75_price: float | None = None
     median_price_per_sqm: float | None = None
-    transaction_count: int
+    # None where the publisher does not disclose the sample size (an
+    # official index, or a published average). Never 0 for that case:
+    # zero would assert that no sales took place.
+    transaction_count: int | None = None
     currency: str
     precision_level: PrecisionLevel
     # What stands behind the figure: real recorded sales, or an official index.
     basis: str = "TRANSACTIONS"
+    # MEDIAN (computed by us from individual sales) or MEAN (as published by a
+    # statistics office). House prices are right-skewed, so the mean sits well
+    # above the median; the UI labels which one it is showing.
+    price_statistic: str = "MEDIAN"
     index_value: float | None = None
     has_price_level: bool = True
     # The span of sales the median was computed over. Equal to `year` for the

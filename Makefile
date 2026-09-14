@@ -74,7 +74,7 @@ migrate:  ## Apply schema migrations
 # --- data download ---------------------------------------------------------
 
 data-download: data-download-geo data-download-postcodes data-download-hpi \
-               data-download-ppd data-download-dvf  ## Fetch every dataset
+               data-download-ppd data-download-dvf data-download-ie  ## Fetch every dataset
 
 data-download-geo:  ## Country + sub-national boundaries (Natural Earth, ~54 MB)
 	@mkdir -p $(RAW)/geo
@@ -139,9 +139,21 @@ ingest-uk:  ## HM Land Registry Price Paid Data + UK House Price Index
 	cd backend && .venv/bin/python -m ingest.uk_ppd
 	cd backend && .venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='%(message)s'); from ingest.uk_hpi import link_districts; link_districts()"
 
-ingest-world:  ## Official indices for 29 further jurisdictions (Eurostat, US FHFA)
+ingest-world: ingest-ie ingest-stats-offices  ## Everything beyond the UK and France
 	@echo "These sources publish an INDEX, not prices: growth only, no price level."
 	cd backend && .venv/bin/python -m ingest.world_stats
+
+data-download-ie:  ## Ireland Residential Property Price Register (~19 MB)
+	@mkdir -p $(RAW)/ie
+	curl -sL --retry 3 -o $(RAW)/ie/ppr.zip \
+	  'https://propertypriceregister.ie/website/npsra/ppr/npsra-ppr.nsf/Downloads/PPR-ALL.zip/$$FILE/PPR-ALL.zip'
+	@echo "ie: $$(du -h $(RAW)/ie | tail -1)"
+
+ingest-ie: ## Ireland: real county medians from 630k recorded sales
+	cd backend && .venv/bin/python -m ingest.ie_ppr
+
+ingest-stats-offices:  ## Real average prices from national statistics offices (NL, DK)
+	cd backend && .venv/bin/python -m ingest.stats_offices
 
 ingest-fr:  ## France geo-DVF + derived local index
 	cd backend && .venv/bin/python -m ingest.fr_dvf $(if $(FR_DEPTS),--departments $(FR_DEPTS),)

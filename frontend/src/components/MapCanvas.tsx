@@ -435,10 +435,14 @@ function buildAreaMarker(a: AreaStat, onClick: () => void): maplibregl.Marker {
 
   const sub = document.createElement("span");
   sub.className = "rm-marker__sub";
+  // Say which statistic this is. A published MEAN sits well above the MEDIAN
+  // for right-skewed house prices, so showing them unlabelled side by side
+  // would invite a false comparison between countries.
+  const measure = a.price_statistic === "MEAN" ? "avg" : "median";
   sub.textContent = a.is_forecast
     ? `${a.area_name} · forecast`
     : a.has_price_level
-      ? a.area_name
+      ? `${a.area_name} · ${measure}`
       : `${a.area_name} · per year`;
   pill.appendChild(sub);
 
@@ -450,7 +454,12 @@ function buildAreaMarker(a: AreaStat, onClick: () => void): maplibregl.Marker {
   el.setAttribute(
     "aria-label",
     a.has_price_level && a.median_price != null
-      ? `${a.area_name}: median ${formatCompact(a.median_price, a.currency)} from ${a.transaction_count} sales in ${a.year}. Zoom in.`
+      ? `${a.area_name}: ${a.price_statistic === "MEAN" ? "average" : "median"} ` +
+        `${formatCompact(a.median_price, a.currency)} in ${a.year}` +
+        (a.transaction_count != null
+          ? ` from ${a.transaction_count.toLocaleString()} sales`
+          : " (sample size not published)") +
+        ". Zoom in."
       : `${a.area_name}: house prices changed ${growth ?? "an unknown amount"} in ${a.year}, from an official index. No price level is published. Zoom in.`,
   );
   const activate = (e: Event) => {

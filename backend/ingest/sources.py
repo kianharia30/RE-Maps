@@ -209,6 +209,49 @@ SOURCES: list[dict] = [
         "source_published_at": None,
     },
     {
+        "key": "nl_cbs_prices",
+        "name": "Existing own homes; average purchase prices, region (83625NED)",
+        "owner": "Centraal Bureau voor de Statistiek (Netherlands)",
+        "url": "https://opendata.cbs.nl/statline/#/CBS/nl/dataset/83625NED/table",
+        "documentation_url": "https://www.cbs.nl/en-gb/our-services/open-data",
+        "licence": "CC BY 4.0 (CBS open data)",
+        "licence_url": "https://www.cbs.nl/en-gb/about-us/website/copyright",
+        "attribution": "Source: Statistics Netherlands (CBS), average purchase prices of existing own homes.",
+        "allowed_use": (
+            "Free re-use with attribution. Figures are the MEAN purchase price, "
+            "not the median, and cover existing owner-occupied dwellings only "
+            "— newly built homes and the rental stock are out of scope. "
+            "Published per province; municipality figures exist in the source "
+            "but no matching boundary data is held here."
+        ),
+        "update_frequency": "Annual",
+        "geographic_coverage": "Netherlands, national and 12 provinces",
+        "historical_coverage": "1995 onwards",
+        "source_published_at": None,
+    },
+    {
+        "key": "dk_statbank_prices",
+        "name": "Sales of property by region and category (EJEN77)",
+        "owner": "Danmarks Statistik",
+        "url": "https://www.statbank.dk/EJEN77",
+        "documentation_url": "https://www.dst.dk/en/Statistik/brug-statistikken/muligheder-i-statistikbanken/api",
+        "licence": "CC BY 4.0 (Danmarks Statistik open data)",
+        "licence_url": "https://www.dst.dk/en/OmDS/omweb/rettigheder",
+        "attribution": "Source: Statistics Denmark, StatBank table EJEN77.",
+        "allowed_use": (
+            "Free re-use with attribution. Figures are the MEAN price per "
+            "property, not the median, and cover single-family houses sold in "
+            "ordinary arm's-length trade ('almindelig fri handel') — family "
+            "transfers and other non-market sales are excluded, and flats and "
+            "multi-dwelling properties are not included. Published quarterly; "
+            "annual figures here are weighted by each quarter's sale count."
+        ),
+        "update_frequency": "Quarterly",
+        "geographic_coverage": "Denmark, national and 5 regions",
+        "historical_coverage": "1992 onwards",
+        "source_published_at": None,
+    },
+    {
         "key": "natural_earth_admin0",
         "name": "Natural Earth Admin 0 - Countries (10m)",
         "owner": "Natural Earth",

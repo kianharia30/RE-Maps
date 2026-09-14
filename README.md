@@ -43,22 +43,42 @@ show a specific dwelling and value it.
 | England & Wales | ✅ 2021–2026 | postcode centroid | ⚠️ needs EPC key | ✅ official | ✅ |
 | France (8 metros) | ✅ 2021–2023 | ✅ **cadastral parcel** | ✅ **every record** | ⚠️ derived | ❌ history too short |
 
-**Statistics-only** — 29 further jurisdictions publish an official house price
-**index** but no individual sales. An index is based at 100 in a reference year:
-it says prices rose 4.2%, *not* that a house costs €380,000. Deriving a price
-from it would need a base-year price nobody publishes, so these areas carry
-**no price level at all** — `median_price` is `null`, `has_price_level` is
-`false`, and the map shows a growth rate instead of a number that looks like a
-price.
+**Area-level prices** — three further countries publish real money, but nothing
+that can be placed on an individual dwelling. Figures are per county or
+province.
+
+| Jurisdiction | Figure | Statistic | Areas | Source |
+|---|---|---|---|---|
+| Ireland | €, from 630,247 recorded sales | **median** | 26 counties | [Property Price Register](https://propertypriceregister.ie/) |
+| Netherlands | €, published average | **mean** | 12 provinces + national | [CBS 83625NED](https://opendata.cbs.nl/statline/#/CBS/nl/dataset/83625NED/table) |
+| Denmark | kr, published average | **mean** | 5 regions + national | [Statistics Denmark EJEN77](https://www.statbank.dk/EJEN77) |
+
+The mean/median column is not pedantry. House prices are right-skewed, so a
+mean sits well above a median for the same market — presenting one as the other
+overstates typical prices. Every row records which it is (`price_statistic`),
+and the map labels each marker `· median` or `· avg` so two countries are never
+silently compared on different measures.
+
+**Index-only** — 26 further jurisdictions publish an official house price
+**index** and nothing else. An index is based at 100 in a reference year: it
+says prices rose 4.2%, *not* that a house costs €380,000. Deriving a price from
+it would need a base-year price nobody publishes, so these areas carry **no
+price level at all** — `median_price` is `null`, `has_price_level` is `false`,
+and the map shows a growth rate instead of a number that looks like a price.
 
 | Source | Jurisdictions | Granularity |
 |---|---|---|
-| [Eurostat `prc_hpi_q`](https://ec.europa.eu/eurostat/databrowser/view/prc_hpi_q/default/table) | 28 European countries | national |
+| [Eurostat `prc_hpi_q`](https://ec.europa.eu/eurostat/databrowser/view/prc_hpi_q/default/table) | 25 European countries | national |
 | [US FHFA HPI](https://www.fhfa.gov/data/hpi) | United States | national + 51 states |
 
-So Berlin, Madrid, Warsaw and Los Angeles now show real, sourced figures where
-they used to show nothing — and still refuse to price an individual house,
-because nobody publishes the sales that would justify one.
+Eurostat publishes no price-level dataset at all — the catalogue was searched,
+and every housing series it carries is an index or a ratio. There is no
+pan-European source of actual prices, which is why each country above required
+its own national statistics office.
+
+So Berlin, Madrid, Warsaw and Los Angeles show real, sourced figures where they
+used to show nothing — and still refuse to price an individual house, because
+nobody publishes the sales that would justify one.
 
 **Nothing at all** — Scotland, Northern Ireland, and every country not listed
 above. Scotland and Northern Ireland are **registered as having no data**, with

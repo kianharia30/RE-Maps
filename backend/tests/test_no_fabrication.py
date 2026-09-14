@@ -346,6 +346,93 @@ class TestTheRegistryListingSeparatesAbsenceFromCoverage:
 
 
 @pytest.mark.db
+class TestAreaLevelPriceLevels:
+    """Countries with real money but no individual sales.
+
+    Ireland publishes every declared sale (so we compute a MEDIAN), while the
+    Dutch and Danish statistics offices publish an average (a MEAN). All three
+    give a real monetary figure; none of them can place an individual dwelling.
+
+    The mean/median distinction is the sharp edge here: for right-skewed house
+    prices the mean sits well above the median, so presenting a published mean
+    as "median" would overstate typical prices.
+    """
+
+    # (name, lat, lon, currency, expected statistic)
+    PLACES = [
+        ("Dublin", 53.3498, -6.2603, "EUR", "MEDIAN"),
+        ("Cork", 51.8985, -8.4756, "EUR", "MEDIAN"),
+        ("Amsterdam", 52.3676, 4.9041, "EUR", "MEAN"),
+        ("Utrecht", 52.0900, 5.1200, "EUR", "MEAN"),
+        ("Copenhagen", 55.6761, 12.5683, "DKK", "MEAN"),
+        ("Aarhus", 56.1629, 10.2039, "DKK", "MEAN"),
+    ]
+
+    def _areas(self, client, lat, lon, zoom=9, year=2025):
+        d = 0.35
+        resp = client.get(
+            "/api/map/prices",
+            params={
+                "bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}",
+                "zoom": zoom, "year": year,
+            },
+        )
+        assert resp.status_code == 200
+        return resp.json()
+
+    @pytest.mark.parametrize("name,lat,lon,currency,statistic", PLACES)
+    def test_a_real_monetary_figure_is_returned(
+        self, client, name, lat, lon, currency, statistic
+    ):
+        body = self._areas(client, lat, lon)
+        assert body["status"] == "OK", f"{name}: {body.get('message')}"
+        priced = [a for a in body["areas"] if a["median_price"] is not None]
+        assert priced, f"{name} returned no monetary figure"
+        for area in priced:
+            assert area["has_price_level"] is True
+            assert area["median_price"] > 0
+            assert area["currency"] == currency
+            # A plausible dwelling price, to catch a unit error such as the
+            # Danish source publishing thousands of kroner.
+            assert 10_000 < area["median_price"] < 100_000_000, (
+                f"{name}: {area['median_price']} {currency} is not a "
+                "plausible dwelling price — check the source's units"
+            )
+
+    @pytest.mark.parametrize("name,lat,lon,currency,statistic", PLACES)
+    def test_the_statistic_is_labelled_correctly(
+        self, client, name, lat, lon, currency, statistic
+    ):
+        body = self._areas(client, lat, lon)
+        priced = [a for a in body["areas"] if a["median_price"] is not None]
+        for area in priced:
+            assert area["price_statistic"] == statistic, (
+                f"{name} reports {area['price_statistic']} but this source "
+                f"publishes a {statistic}"
+            )
+
+    @pytest.mark.parametrize("name,lat,lon,currency,statistic", PLACES)
+    def test_an_undisclosed_sample_size_is_null_not_zero(
+        self, client, name, lat, lon, currency, statistic
+    ):
+        """Zero would assert that no sales took place."""
+        body = self._areas(client, lat, lon)
+        for area in body["areas"]:
+            if area["median_price"] is not None:
+                assert area["transaction_count"] != 0, (
+                    f"{name} claims 0 sales behind a real price"
+                )
+
+    @pytest.mark.parametrize("name,lat,lon,currency,statistic", PLACES)
+    def test_individual_dwellings_are_still_refused(
+        self, client, name, lat, lon, currency, statistic
+    ):
+        body = self._areas(client, lat, lon, zoom=17)
+        assert body["properties"] == [], f"{name} served individual dwellings"
+        assert body["status"] != "OK"
+
+
+@pytest.mark.db
 class TestStatisticsOnlyCoverage:
     """Countries covered by an official index but with no individual sales.
 
