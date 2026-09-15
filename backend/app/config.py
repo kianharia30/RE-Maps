@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     epc_api_email: str = Field(default="", alias="EPC_API_EMAIL")
     epc_api_key: str = Field(default="", alias="EPC_API_KEY")
 
+    # --- optional: US Census ACS county home values -------------------------
+    # Free key from https://api.census.gov/data/key_signup.html. Without it the
+    # Census endpoint returns an HTML "Missing Key" page under HTTP 200, so its
+    # absence is checked explicitly rather than discovered as empty output.
+    census_api_key: str = Field(default="", alias="CENSUS_API_KEY")
+
     # --- modelling ----------------------------------------------------------
     avm_model_version: str = Field(default="cs-avm-1.2.0", alias="AVM_MODEL_VERSION")
     forecast_model_version: str = Field(

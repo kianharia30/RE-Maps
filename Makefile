@@ -82,6 +82,8 @@ data-download-geo:  ## Country + sub-national boundaries (Natural Earth, ~54 MB)
 	  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson
 	curl -sL --retry 3 -o $(RAW)/geo/ne_10m_admin_1_states_provinces.geojson \
 	  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson
+	curl -sL --retry 3 -o $(RAW)/geo/ne_10m_admin_2_counties.geojson \
+	  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_2_counties.geojson
 	@echo "geo: $$(du -h $(RAW)/geo | tail -1)"
 
 data-download-postcodes:  ## UK postcode centroids (Open Postcode Geo, ~66 MB)
@@ -139,7 +141,7 @@ ingest-uk:  ## HM Land Registry Price Paid Data + UK House Price Index
 	cd backend && .venv/bin/python -m ingest.uk_ppd
 	cd backend && .venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='%(message)s'); from ingest.uk_hpi import link_districts; link_districts()"
 
-ingest-world: ingest-ie ingest-stats-offices  ## Everything beyond the UK and France
+ingest-world: ingest-ie ingest-sg ingest-stats-offices ingest-us  ## Everything beyond the UK and France
 	@echo "These sources publish an INDEX, not prices: growth only, no price level."
 	cd backend && .venv/bin/python -m ingest.world_stats
 
@@ -152,8 +154,15 @@ data-download-ie:  ## Ireland Residential Property Price Register (~19 MB)
 ingest-ie: ## Ireland: real county medians from 630k recorded sales
 	cd backend && .venv/bin/python -m ingest.ie_ppr
 
-ingest-stats-offices:  ## Real average prices from national statistics offices (NL, DK)
+ingest-stats-offices:  ## Real average prices from statistics offices (NL, SE, DK)
 	cd backend && .venv/bin/python -m ingest.stats_offices
+
+ingest-sg:  ## Singapore: real medians from 240k HDB resale records
+	cd backend && .venv/bin/python -m ingest.sg_hdb
+
+ingest-us:  ## USA: county home values (needs a free CENSUS_API_KEY in backend/.env)
+	@cd backend && .venv/bin/python -m ingest.us_census || \
+	  echo "  skipped: set CENSUS_API_KEY in backend/.env (free: https://api.census.gov/data/key_signup.html)"
 
 ingest-fr:  ## France geo-DVF + derived local index
 	cd backend && .venv/bin/python -m ingest.fr_dvf $(if $(FR_DEPTS),--departments $(FR_DEPTS),)

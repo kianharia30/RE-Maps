@@ -275,6 +275,32 @@ SOURCES: list[dict] = [
         "source_published_at": None,
     },
     {
+        "key": "us_census_acs",
+        "name": "American Community Survey 5-year, median home value (B25077)",
+        "owner": "United States Census Bureau",
+        "url": "https://www.census.gov/programs-surveys/acs",
+        "documentation_url": "https://www.census.gov/data/developers/data-sets/acs-5year.html",
+        "licence": "US Government work — public domain (17 U.S.C. §105)",
+        "licence_url": "https://www.census.gov/about/policies/open-government.html",
+        "attribution": "Source: U.S. Census Bureau, American Community Survey 5-year estimates.",
+        "allowed_use": (
+            "Public domain; a free API key is required. IMPORTANT: this is NOT "
+            "a transaction price. B25077 is the median SELF-REPORTED value of "
+            "owner-occupied homes — the survey asks occupants what they "
+            "believe their property would sell for. It therefore covers the "
+            "whole owner-occupied stock rather than homes that changed hands, "
+            "excludes renters entirely, and owner estimates are known to run "
+            "above market outcomes. Not comparable with the recorded-sale "
+            "medians used for England and Wales, Ireland or Singapore. "
+            "Estimates whose margin of error exceeds a third of the value are "
+            "discarded as uninformative."
+        ),
+        "update_frequency": "Annual (5-year rolling estimates)",
+        "geographic_coverage": "United States, ~3,200 counties",
+        "historical_coverage": "Latest available 5-year release",
+        "source_published_at": None,
+    },
+    {
         "key": "natural_earth_admin0",
         "name": "Natural Earth Admin 0 - Countries (10m)",
         "owner": "Natural Earth",
@@ -305,6 +331,26 @@ SOURCES: list[dict] = [
         ),
         "update_frequency": "Irregular",
         "geographic_coverage": "Global, 4,596 sub-national regions",
+        "historical_coverage": "Current boundaries",
+        "source_published_at": None,
+    },
+    {
+        "key": "natural_earth_admin2",
+        "name": "Natural Earth Admin 2 - US Counties (10m)",
+        "owner": "Natural Earth",
+        "url": "https://www.naturalearthdata.com/downloads/10m-cultural-vectors/",
+        "documentation_url": "https://github.com/nvkelso/natural-earth-vector",
+        "licence": "Public domain",
+        "licence_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+        "attribution": "US county boundaries from Natural Earth (public domain).",
+        "allowed_use": (
+            "Unrestricted. Keyed by 5-digit FIPS code, which is what the US "
+            "Census API returns, so county figures join to a shape without "
+            "name matching — necessary because US county names are not unique "
+            "across states. Never used as a source of prices."
+        ),
+        "update_frequency": "Irregular",
+        "geographic_coverage": "United States, 3,224 counties",
         "historical_coverage": "Current boundaries",
         "source_published_at": None,
     },

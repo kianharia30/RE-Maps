@@ -438,7 +438,15 @@ function buildAreaMarker(a: AreaStat, onClick: () => void): maplibregl.Marker {
   // Say which statistic this is. A published MEAN sits well above the MEDIAN
   // for right-skewed house prices, so showing them unlabelled side by side
   // would invite a false comparison between countries.
-  const measure = a.price_statistic === "MEAN" ? "avg" : "median";
+  // An owner-estimated value is not a sale price and must not read as one:
+  // the US Census figure is the middle of what owners think their homes are
+  // worth, while Dublin's is the middle of what people actually paid.
+  const measure =
+    a.basis === "OWNER_ESTIMATE"
+      ? "est. value"
+      : a.price_statistic === "MEAN"
+        ? "avg"
+        : "median";
   sub.textContent = a.is_forecast
     ? `${a.area_name} · forecast`
     : a.has_price_level
@@ -454,7 +462,13 @@ function buildAreaMarker(a: AreaStat, onClick: () => void): maplibregl.Marker {
   el.setAttribute(
     "aria-label",
     a.has_price_level && a.median_price != null
-      ? `${a.area_name}: ${a.price_statistic === "MEAN" ? "average" : "median"} ` +
+      ? `${a.area_name}: ${
+          a.basis === "OWNER_ESTIMATE"
+            ? "estimated value (owner-reported, not a sale price)"
+            : a.price_statistic === "MEAN"
+              ? "average"
+              : "median"
+        } ` +
         `${formatCompact(a.median_price, a.currency)} in ${a.year}` +
         (a.transaction_count != null
           ? ` from ${a.transaction_count.toLocaleString()} sales`

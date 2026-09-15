@@ -19,6 +19,7 @@ from .sources import mark_ingested, register_sources
 
 log = logging.getLogger(__name__)
 SOURCE_KEY = "natural_earth_admin1"
+COUNTY_SOURCE_KEY = "natural_earth_admin2"
 
 UPSERT = """
 INSERT INTO regions (
@@ -121,7 +122,76 @@ def link_area_stats() -> int:
     return linked
 
 
+# --- US counties (admin-2) -------------------------------------------------
+#
+# County names are not unique in the United States -- there are roughly thirty
+# Washington Counties -- so the identity key is the 5-digit FIPS code, which is
+# also exactly what the Census API returns as state+county. That shared key is
+# what lets a Census median join to a shape without any name matching.
+COUNTY_UPSERT = """
+INSERT INTO regions (
+    country_iso2, iso_3166_2, postal_code, name, region_type, geom, source_id
+)
+SELECT 'US', %(fips_key)s, %(fips)s, %(name)s, 'County',
+       ST_Multi(ST_CollectionExtract(
+           ST_MakeValid(ST_GeomFromGeoJSON(%(geojson)s)), 3
+       ))::geometry(MultiPolygon, 4326),
+       %(source_id)s
+ON CONFLICT (country_iso2, coalesce(iso_3166_2, ''), name) DO UPDATE SET
+    postal_code = EXCLUDED.postal_code,
+    region_type = EXCLUDED.region_type,
+    geom        = EXCLUDED.geom;
+"""
+
+
+def ingest_us_counties(path: Path | None = None) -> int:
+    settings = get_settings()
+    source_ids = register_sources()
+    path = path or (
+        settings.raw_dir / "geo" / "ne_10m_admin_2_counties.geojson"
+    )
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Run `make data-download-geo` first."
+        )
+
+    data = json.loads(path.read_text())
+    written = skipped = 0
+    with sync_conn() as conn:
+        for feature in data["features"]:
+            props = feature["properties"]
+            fips = _clean(props.get("CODE_LOCAL"))
+            name = _clean(props.get("NAME"))
+            geometry = feature.get("geometry")
+            if not fips or not name or not geometry:
+                skipped += 1
+                continue
+            with conn.cursor() as cur:
+                cur.execute(
+                    COUNTY_UPSERT,
+                    {
+                        "fips_key": f"US-{fips}",
+                        "fips": fips,
+                        "name": name,
+                        "geojson": json.dumps(geometry),
+                        "source_id": source_ids.get(COUNTY_SOURCE_KEY),
+                    },
+                )
+            written += 1
+            if written % 1000 == 0:
+                conn.commit()
+                log.info("  loaded %s counties", f"{written:,}")
+        with conn.cursor() as cur:
+            cur.execute("ANALYZE regions")
+        conn.commit()
+
+    mark_ingested(COUNTY_SOURCE_KEY, written)
+    log.info("US counties: %s loaded, %s skipped", f"{written:,}", skipped)
+    return written
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     ingest()
+    ingest_us_counties()
     link_area_stats()
