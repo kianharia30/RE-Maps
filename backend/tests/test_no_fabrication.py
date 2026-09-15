@@ -440,12 +440,27 @@ class TestAreaLevelPriceLevels:
             )
 
     @pytest.mark.parametrize("name,lat,lon,currency,statistic", PLACES)
-    def test_individual_dwellings_are_still_refused(
+    def test_zooming_in_keeps_the_area_figure_and_adds_no_dwellings(
         self, client, name, lat, lon, currency, statistic
     ):
+        """Zooming in must not blank the map, and must not invent dwellings.
+
+        These countries have no individual sale records, so the honest
+        behaviour at street zoom is to keep showing the finest AREA figure
+        rather than either a dwelling-level price we cannot justify or an
+        empty screen. Earlier this returned NO_DATA and every country except
+        England, Wales and France went blank past roughly zoom 15.
+        """
         body = self._areas(client, lat, lon, zoom=17)
         assert body["properties"] == [], f"{name} served individual dwellings"
-        assert body["status"] != "OK"
+        assert body["status"] == "OK", f"{name} went blank when zoomed in"
+        assert body["areas"], f"{name} returned no figure at street zoom"
+        for area in body["areas"]:
+            assert area["median_price"] is not None
+            # Still an AREA statistic, never dwelling-level precision.
+            assert area["precision_level"] in (
+                "CITY_REGIONAL", "POSTCODE_AREA", "STREET_LEVEL",
+            ), f"{name} claims {area['precision_level']} precision"
 
 
 @pytest.mark.db

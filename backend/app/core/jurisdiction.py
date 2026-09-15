@@ -33,6 +33,30 @@ ORDER BY ST_Area(geom) ASC   -- prefer the smallest containing polygon
 LIMIT 1
 """
 
+# Coastal cities fall OUTSIDE a simplified coastline more often than is
+# comfortable: Copenhagen sits on the Øresund shore and the 10m Natural Earth
+# polygon for Denmark does not contain it, so the whole country reported
+# "no data" while its figures sat in the database. Stockholm, Singapore and
+# Amsterdam are all similarly exposed.
+#
+# So a point that lands in no polygon is matched to the nearest country within
+# a tolerance, rather than being treated as the open sea. The tolerance is
+# deliberately tight — a genuine mid-ocean point must still resolve to nothing.
+_NEAREST_SQL = """
+SELECT iso2, name, currency_code
+FROM countries
+WHERE ST_DWithin(
+        geom::geography,
+        ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography,
+        %(metres)s
+      )
+ORDER BY geom::geography <-> ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography
+LIMIT 1
+"""
+# ~15 km: enough for a harbour, an estuary or a simplified coastline, far too
+# little to reach another country from open water.
+COASTAL_TOLERANCE_M = 15_000
+
 # For a bounding box we take the country at the viewport centre. If the centre
 # falls in the sea (a coastal view), fall back to whichever country covers the
 # largest share of the box, so panning along a coastline still resolves.
@@ -118,6 +142,12 @@ async def _uk_region(lon: float, lat: float) -> tuple[str | None, str | None]:
 
 async def resolve_point(lon: float, lat: float) -> Jurisdiction | None:
     row = await fetch_one(_POINT_SQL, (lon, lat))
+    if not row:
+        # Just offshore, or just outside a simplified coastline.
+        row = await fetch_one(
+            _NEAREST_SQL,
+            {"lon": lon, "lat": lat, "metres": COASTAL_TOLERANCE_M},
+        )
     if not row:
         return None
     region_code = region_name = None

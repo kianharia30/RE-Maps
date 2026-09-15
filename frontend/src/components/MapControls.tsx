@@ -4,8 +4,6 @@ import { useState } from "react";
 
 import type { MapTier } from "@/types/api";
 
-export type MapMode = "markers" | "heatmap";
-export type HeatMetric = "median_price" | "median_price_per_sqm" | "growth_1y_pct";
 export type Segment = "all" | "detached" | "semi_detached" | "terraced" | "flat" | "house";
 
 const SEGMENT_LABEL: Record<Segment, string> = {
@@ -17,11 +15,6 @@ const SEGMENT_LABEL: Record<Segment, string> = {
   house: "Houses",
 };
 
-const METRIC_LABEL: Record<HeatMetric, string> = {
-  median_price: "Median value",
-  median_price_per_sqm: "Price per m²",
-  growth_1y_pct: "Annual growth",
-};
 
 const TIER_LABEL: Record<MapTier, string> = {
   WORLD: "World", COUNTRY: "Country", REGION: "Region", CITY: "City",
@@ -30,10 +23,6 @@ const TIER_LABEL: Record<MapTier, string> = {
 };
 
 export default function MapControls({
-  mode,
-  onModeChange,
-  metric,
-  onMetricChange,
   segment,
   onSegmentChange,
   tier,
@@ -41,10 +30,6 @@ export default function MapControls({
   resultCount,
   truncated,
 }: {
-  mode: MapMode;
-  onModeChange: (m: MapMode) => void;
-  metric: HeatMetric;
-  onMetricChange: (m: HeatMetric) => void;
   segment: Segment;
   onSegmentChange: (s: Segment) => void;
   tier: MapTier | null;
@@ -56,53 +41,6 @@ export default function MapControls({
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-2">
-      {/* markers | heatmap */}
-      <div
-        className="flex rounded-full bg-white/97 p-1 backdrop-blur-xl ring-1 ring-black/[0.04]"
-        style={{ boxShadow: "var(--shadow-float)" }}
-        role="group"
-        aria-label="Map display mode"
-      >
-        {(["markers", "heatmap"] as MapMode[]).map((m) => (
-          <button
-            key={m}
-            onClick={() => onModeChange(m)}
-            aria-pressed={mode === m}
-            className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold capitalize
-                        transition ${
-                          mode === m
-                            ? "bg-slate-900 text-white"
-                            : "text-slate-600 hover:bg-slate-100"
-                        }`}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
-
-      {mode === "heatmap" && (
-        <div
-          className="rm-animate-in flex rounded-full bg-white/97 p-1 backdrop-blur-xl ring-1
-                     ring-black/[0.04]"
-          style={{ boxShadow: "var(--shadow-float)" }}
-          role="group"
-          aria-label="Heatmap metric"
-        >
-          {(Object.keys(METRIC_LABEL) as HeatMetric[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => onMetricChange(m)}
-              aria-pressed={metric === m}
-              className={`rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition ${
-                metric === m ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              {METRIC_LABEL[m]}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* property type filter */}
       <div className="relative">
         <button

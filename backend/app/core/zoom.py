@@ -145,6 +145,67 @@ def precision_for_tier(tier: MapTier) -> PrecisionLevel:
     return _PRECISION_BY_TIER[tier]
 
 
+# How precisely each AREA LEVEL actually describes a dwelling.
+#
+# The tier is what the viewer asked for; the level is what the data could
+# answer with, and the coarsening chain means they often differ. Precision must
+# follow the level, or a county median served to a street-zoom viewport gets
+# labelled NEIGHBOURHOOD — a figure covering a whole Irish county presented as
+# though it described a neighbourhood.
+_PRECISION_BY_LEVEL: dict[str, PrecisionLevel] = {
+    "street": PrecisionLevel.STREET_POSTCODE,
+    "postcode": PrecisionLevel.STREET_POSTCODE,
+    "sector": PrecisionLevel.STREET_POSTCODE,
+    "outcode": PrecisionLevel.NEIGHBOURHOOD,
+    "district": PrecisionLevel.NEIGHBOURHOOD,
+    "county": PrecisionLevel.CITY_REGIONAL,
+    "state": PrecisionLevel.CITY_REGIONAL,
+    "country": PrecisionLevel.CITY_REGIONAL,
+}
+
+
+# The tier each area level genuinely corresponds to. Used to report back what
+# the map is ACTUALLY showing: with the coarsening chain, a viewport asking for
+# postcode-level data is frequently answered with a county figure, and
+# labelling that "Postcode" tells the viewer the opposite of the truth.
+_TIER_BY_LEVEL: dict[str, MapTier] = {
+    "street": MapTier.STREET,
+    "postcode": MapTier.POSTCODE,
+    "sector": MapTier.POSTCODE,
+    "outcode": MapTier.NEIGHBOURHOOD,
+    "district": MapTier.CITY,
+    "county": MapTier.REGION,
+    "state": MapTier.REGION,
+    "country": MapTier.COUNTRY,
+}
+
+
+def tier_for_level(level: str, requested: MapTier) -> MapTier:
+    """The tier that honestly describes data served at `level`.
+
+    Never finer than what was asked for: a county row requested at world zoom
+    is still a world view.
+    """
+    served = _TIER_BY_LEVEL.get(level)
+    if served is None:
+        return requested
+    order = list(MapTier)
+    return min(served, requested, key=order.index)
+
+
+def precision_for_level(level: str, tier: MapTier) -> PrecisionLevel:
+    """Precision of a figure at `level`, never finer than the tier implies."""
+    by_level = _PRECISION_BY_LEVEL.get(level)
+    if by_level is None:
+        return _PRECISION_BY_TIER[tier]
+    by_tier = _PRECISION_BY_TIER[tier]
+    # Whichever is coarser wins: a street tier served a county row is
+    # county-precise, and a county row requested at world tier is no more
+    # precise than the world tier claims.
+    order = list(PrecisionLevel)
+    return max(by_level, by_tier, key=order.index)
+
+
 def limit_for_tier(tier: MapTier) -> int:
     return _LIMIT_BY_TIER[tier]
 

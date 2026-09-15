@@ -223,18 +223,38 @@ async def describe(
                (SELECT max(extract(year FROM transaction_date))::int
                   FROM transactions WHERE country_iso2 = %(c)s) AS max_txn_year,
                (SELECT max(extract(year FROM period))::int
-                  FROM market_indices WHERE country_iso2 = %(c)s) AS max_index_year
+                  FROM market_indices WHERE country_iso2 = %(c)s) AS max_index_year,
+               -- Priced area statistics are the ONLY evidence some countries
+               -- have: Ireland, Singapore and Australia hold no rows in
+               -- `transactions` at all. Reading the timeline's bounds from
+               -- transactions alone gave them no start year, so the slider
+               -- fell back to a hard-coded guess rather than the years we
+               -- actually hold.
+               (SELECT min(year)::int FROM area_stats
+                 WHERE country_iso2 = %(c)s AND median_price IS NOT NULL
+                ) AS min_area_year,
+               (SELECT max(year)::int FROM area_stats
+                 WHERE country_iso2 = %(c)s AND median_price IS NOT NULL
+                ) AS max_area_year
         """,
         {"c": country_iso2},
     )
     bounds = bounds or {}
-    min_year = bounds.get("min_txn_year")
-    max_txn_year = bounds.get("max_txn_year")
-    max_index_year = bounds.get("max_index_year")
     current_year = date.today().year
-
+    min_year = min(
+        [
+            y for y in (bounds.get("min_txn_year"), bounds.get("min_area_year"))
+            if y
+        ] or [current_year]
+    )
     max_year = max(
-        [y for y in (max_txn_year, max_index_year) if y] or [current_year]
+        [
+            y for y in (
+                bounds.get("max_txn_year"),
+                bounds.get("max_index_year"),
+                bounds.get("max_area_year"),
+            ) if y
+        ] or [current_year]
     )
     # Never advertise a year beyond the present as though it were observed.
     max_year = min(max_year, current_year)
@@ -246,9 +266,16 @@ async def describe(
         entry=entry,
         min_year=min_year,
         max_data_year=max_year,
-        max_forecast_year=(
-            (max_year or current_year) + max_forecast_years
-            if entry.forecast_supported else max_year
-        ),
+        # The timeline reaches the future wherever we hold data, not only
+        # where a projection can be produced.
+        #
+        # Capping this at the last observed year for everywhere except the UK
+        # left the slider unable to move past the present in eight of the nine
+        # covered countries — it read as broken rather than as a limit. The
+        # honest arrangement is: the control moves, and the map says plainly
+        # that no projection is available for that country and why.
+        # `entry.forecast_supported` remains the truthful flag for whether a
+        # projection actually exists.
+        max_forecast_year=(max_year or current_year) + max_forecast_years,
         current_year=current_year,
     )

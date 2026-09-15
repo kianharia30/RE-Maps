@@ -26,7 +26,9 @@ from ...core.zoom import (
     coarser_levels,
     is_live_level,
     limit_for_tier,
+    precision_for_level,
     precision_for_tier,
+    tier_for_level,
     tier_for_zoom,
 )
 from ...db import fetch_all, fetch_one
@@ -416,23 +418,25 @@ async def map_prices(
     dwelling_level = provider is not None and coverage_mod.supports_individual_properties(
         entry
     )
-    if tier is MapTier.PROPERTY and not dwelling_level:
-        return MapResponse(
-            status=DataStatus.NO_DATA,
-            message=(
-                "Individual property prices are not available here. "
-                f"{entry.region_name or jurisdiction.country_name} is covered by "
-                "official area statistics only — zoom out to see them."
-                if entry else NO_DATA_MESSAGE
-            ),
-            tier=tier, year=year, is_future=is_future,
-            is_historical=year < today.year,
-            currency=(entry.currency_code if entry else None),
-            attributions=[s.attribution for s in (entry.sources if entry else [])],
-        )
-
     currency = entry.currency_code or currency_for_country(country) or "GBP"
     attributions = [s.attribution for s in entry.sources]
+    if tier is MapTier.PROPERTY and not dwelling_level:
+        # Zooming in must not make the figure disappear.
+        #
+        # This used to return NO_DATA, so every country except England, Wales
+        # and France went blank past roughly zoom 15 — the map looked broken at
+        # exactly the zoom people use most. The honest behaviour is to keep
+        # showing the finest AREA figure that exists, clearly labelled as such,
+        # rather than either inventing a dwelling-level price or showing
+        # nothing at all.
+        #
+        # The tier is reported as the area tier actually served, so the UI
+        # cannot imply these are individual properties.
+        area_tier = MapTier.NEIGHBOURHOOD
+        return await _area_tier(
+            box, area_tier, year, segment, country, currency, attributions,
+            is_future, today,
+        )
 
     try:
         if tier is MapTier.PROPERTY and dwelling_level:
@@ -659,7 +663,7 @@ async def _area_tier(
             attributions=attributions,
         )
 
-    precision = precision_for_tier(tier)
+    precision = precision_for_level(level, tier)
     areas: list[AreaStat] = []
 
     # For a future year, one forecast per distinct area (cheap: a handful).
@@ -746,8 +750,10 @@ async def _area_tier(
         return MapResponse(
             status=DataStatus.OUT_OF_RANGE,
             message=(
-                f"A {year} projection is beyond what the available price index "
-                "supports for this area."
+                f"No {year} projection is available here. Projecting a price "
+                "forward needs a long run of index history for the area, which "
+                "is published for the United Kingdom but not for this "
+                "jurisdiction — so no figure is shown rather than a guess."
                 if is_future else
                 f"No usable figures for {stats_year} in this area."
             ),
@@ -757,8 +763,11 @@ async def _area_tier(
         )
 
     return MapResponse(
-        status=DataStatus.OK, tier=tier, year=year, data_year=stats_year,
-        is_future=is_future,
+        # Report the tier the data actually answers at, not the one requested:
+        # the coarsening chain routinely answers a postcode-zoom viewport with
+        # a county figure, and calling that "Postcode" misdescribes it.
+        status=DataStatus.OK, tier=tier_for_level(level, tier), year=year,
+        data_year=stats_year, is_future=is_future,
         is_historical=year < today.year, currency=currency, areas=areas,
         truncated=len(rows) >= limit, attributions=attributions,
     )

@@ -26,8 +26,6 @@ export interface MapView {
 interface Props {
   data: MapResponse | null;
   year: number;
-  mode: "markers" | "heatmap";
-  heatmapMetric: "median_price" | "median_price_per_sqm" | "growth_1y_pct";
   selectedPropertyId: number | null;
   flyTo: { lat: number; lon: number; zoom: number; bbox?: LngLatBoundsLike } | null;
   onViewChange: (bbox: string, zoom: number, centre: [number, number]) => void;
@@ -39,8 +37,6 @@ interface Props {
 export default function MapCanvas({
   data,
   year,
-  mode,
-  heatmapMetric,
   selectedPropertyId,
   flyTo,
   onViewChange,
@@ -123,33 +119,6 @@ export default function MapCanvas({
       if (readyRef.current) return;
       readyRef.current = true;
       setReady(true);
-      // Heatmap source is created empty and fed later, so toggling modes never
-      // has to add/remove layers mid-interaction.
-      map.addSource("rm-heat", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-      map.addLayer({
-        id: "rm-heat-layer",
-        type: "heatmap",
-        source: "rm-heat",
-        paint: {
-          "heatmap-weight": ["coalesce", ["get", "w"], 0.4],
-          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 4, 0.7, 14, 2.1],
-          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 4, 18, 10, 34, 16, 62],
-          "heatmap-opacity": 0.72,
-          "heatmap-color": [
-            "interpolate", ["linear"], ["heatmap-density"],
-            0, "rgba(30,64,175,0)",
-            0.15, "rgba(37,99,235,0.55)",
-            0.35, "rgba(14,165,233,0.68)",
-            0.55, "rgba(250,204,21,0.75)",
-            0.75, "rgba(249,115,22,0.82)",
-            1, "rgba(190,18,60,0.9)",
-          ],
-        },
-        layout: { visibility: "none" },
-      });
       map.resize();
       emit();
       handlers.current.onMapReady();
@@ -240,7 +209,7 @@ export default function MapCanvas({
     const existing = markersRef.current;
     const wanted = new Set<string>();
 
-    if (mode === "markers" && data?.status === "OK") {
+    if (data?.status === "OK") {
       for (const p of data.properties as PropertySummary[]) {
         const key = `p:${p.id}`;
         wanted.add(key);
@@ -279,58 +248,8 @@ export default function MapCanvas({
         existing.delete(key);
       }
     }
-  }, [data, mode, selectedPropertyId, year, ready]);
+  }, [data, selectedPropertyId, year, ready]);
 
-  /* --- heatmap ------------------------------------------------------------ */
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !readyRef.current) return;
-    const source = map.getSource("rm-heat") as maplibregl.GeoJSONSource | undefined;
-    if (!source) return;
-
-    if (mode !== "heatmap" || data?.status !== "OK") {
-      map.setLayoutProperty("rm-heat-layer", "visibility", "none");
-      source.setData({ type: "FeatureCollection", features: [] });
-      return;
-    }
-
-    const points: { lon: number; lat: number; value: number | null }[] = [
-      ...data.areas.map((a) => ({
-        lon: a.longitude,
-        lat: a.latitude,
-        // `median_price` is null for index-only areas; the filter below drops
-        // them rather than letting a missing price read as zero.
-        value:
-          heatmapMetric === "median_price"
-            ? a.median_price
-            : heatmapMetric === "median_price_per_sqm"
-              ? a.median_price_per_sqm
-              : a.growth_1y_pct,
-      })),
-      ...data.properties.map((p) => ({
-        lon: p.longitude,
-        lat: p.latitude,
-        value: heatmapMetric === "growth_1y_pct" ? null : p.price.value,
-      })),
-    ].filter((p) => p.value != null);
-
-    // Normalise within the current viewport so the ramp always uses its full
-    // range, whatever the local price level.
-    const values = points.map((p) => p.value as number).sort((a, b) => a - b);
-    const lo = values[Math.floor(values.length * 0.05)] ?? 0;
-    const hi = values[Math.floor(values.length * 0.95)] ?? 1;
-    const span = hi - lo || 1;
-
-    source.setData({
-      type: "FeatureCollection",
-      features: points.map((p) => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [p.lon, p.lat] },
-        properties: { w: Math.min(1, Math.max(0.05, ((p.value as number) - lo) / span)) },
-      })),
-    });
-    map.setLayoutProperty("rm-heat-layer", "visibility", "visible");
-  }, [data, mode, heatmapMetric, ready]);
 
   return <div ref={containerRef} className="rm-map-root" aria-label="Property price map" />;
 }

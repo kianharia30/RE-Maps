@@ -10,7 +10,7 @@ import {
   formatMonthYear,
   formatRange,
 } from "@/lib/currency";
-import type { Comparable, PriceHistory, PropertyDetail } from "@/types/api";
+import type { PriceHistory, PropertyDetail } from "@/types/api";
 import {
   ConfidenceBadge,
   PrecisionBadge,
@@ -30,20 +30,16 @@ export default function PropertyPanel({
   year,
   onClose,
   onSelectYear,
-  onHighlightComparables,
 }: {
   propertyId: number;
   year: number;
   onClose: () => void;
   onSelectYear: (year: number) => void;
-  onHighlightComparables: (comps: Comparable[]) => void;
 }) {
   const [detail, setDetail] = useState<PropertyDetail | null>(null);
   const [history, setHistory] = useState<PriceHistory | null>(null);
-  const [comparables, setComparables] = useState<Comparable[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showMethod, setShowMethod] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
   useEffect(() => {
@@ -56,18 +52,11 @@ export default function PropertyPanel({
         if (cancelled) return;
         setDetail(d);
         setLoading(false);
-        // History and comparables are secondary: load them after the panel has
-        // something to show, so the headline figure is never gated on them.
-        const [h, c] = await Promise.allSettled([
-          api.history(propertyId),
-          api.comparables(propertyId, year, 12),
-        ]);
+        // History is secondary: loaded after the panel has something to show,
+        // so the headline figure is never gated on it.
+        const h = await api.history(propertyId).catch(() => null);
         if (cancelled) return;
-        if (h.status === "fulfilled") setHistory(h.value);
-        if (c.status === "fulfilled") {
-          setComparables(c.value);
-          onHighlightComparables(c.value);
-        }
+        if (h) setHistory(h);
       } catch (err) {
         if (cancelled || err instanceof AbortedError) return;
         setError(
@@ -81,7 +70,7 @@ export default function PropertyPanel({
     return () => {
       cancelled = true;
     };
-  }, [propertyId, year, onHighlightComparables]);
+  }, [propertyId, year]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -263,45 +252,6 @@ export default function PropertyPanel({
               )}
             </section>
 
-            {/* --- recorded sales ------------------------------------------- */}
-            {detail.transactions.length > 0 && (
-              <section className="mt-5">
-                <h3 className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.06em]
-                               text-slate-500">
-                  Recorded sales ({detail.transactions.length})
-                </h3>
-                <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl ring-1
-                               ring-slate-100">
-                  {detail.transactions.map((t) => (
-                    <li key={t.id} className="flex items-baseline gap-2 px-3 py-2.5">
-                      <span className="text-[14px] font-bold tabular-nums text-slate-900">
-                        {formatFull(t.price, t.currency)}
-                      </span>
-                      <span className="text-[12px] text-slate-500">{formatDate(t.date)}</span>
-                      <PriceTypeBadge type="TRANSACTION" size="sm" />
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {/* --- comparables ---------------------------------------------- */}
-            <Comparables comparables={comparables} currency={currency} />
-
-            {/* --- methodology ---------------------------------------------- */}
-            {price && (
-              <Disclosure
-                open={showMethod}
-                onToggle={() => setShowMethod((v) => !v)}
-                title="How this figure was produced"
-              >
-                <p className="text-[12.5px] leading-relaxed text-slate-700">
-                  {price.methodology}
-                </p>
-                <Evidence evidence={price.evidence} currency={currency} />
-              </Disclosure>
-            )}
-
             {/* --- sources -------------------------------------------------- */}
             <Disclosure
               open={showSources}
@@ -399,152 +349,8 @@ function Facts({ detail }: { detail: PropertyDetail }) {
   );
 }
 
-function Comparables({
-  comparables,
-  currency,
-}: {
-  comparables: Comparable[] | null;
-  currency: string;
-}) {
-  if (!comparables) return null;
-  if (comparables.length === 0) {
-    return (
-      <section className="mt-5">
-        <h3 className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-500">
-          Comparable sales
-        </h3>
-        <p className="rounded-xl bg-slate-50 px-3 py-4 text-[12.5px] text-slate-500">
-          No sufficiently comparable nearby sales were found.
-        </p>
-      </section>
-    );
-  }
-  return (
-    <section className="mt-5">
-      <h3 className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-500">
-        Comparable sales ({comparables.length})
-      </h3>
-      <ul className="space-y-1.5">
-        {comparables.map((c) => (
-          <li key={c.transaction_id}
-              className="rounded-xl px-3 py-2.5 ring-1 ring-slate-100 transition hover:bg-slate-50">
-            <div className="flex items-baseline gap-2">
-              <span className="text-[14px] font-bold tabular-nums text-slate-900">
-                {formatFull(c.sold_price, c.currency)}
-              </span>
-              <span className="text-[11.5px] text-slate-500">{formatDate(c.sold_date)}</span>
-              <span className="ml-auto text-[11px] tabular-nums text-slate-400">
-                {c.distance_miles.toFixed(2)} mi
-              </span>
-            </div>
-            <p className="mt-0.5 truncate text-[11.5px] text-slate-500">
-              {[
-                c.address_short,
-                c.property_type ? prettyType(c.property_type) : null,
-                formatArea(c.floor_area_sqm),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
-            {c.index_adjusted_price != null && (
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Index-adjusted to the valuation date:{" "}
-                <span className="font-semibold tabular-nums text-slate-500">
-                  {formatFull(c.index_adjusted_price, currency)}
-                </span>
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 /** Renders the model's explainability payload as readable rows (§38). */
-function Evidence({
-  evidence,
-  currency,
-}: {
-  evidence: Record<string, unknown>;
-  currency: string;
-}) {
-  const rows: [string, string][] = [];
-  const push = (label: string, value: unknown, money = false) => {
-    if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return;
-    if (typeof value === "object" && !Array.isArray(value)) return;
-    const text = Array.isArray(value)
-      ? value.map((v) => (money && typeof v === "number" ? formatFull(v, currency) : String(v))).join(" – ")
-      : money && typeof value === "number"
-        ? formatFull(value, currency)
-        : String(value);
-    rows.push([label, text]);
-  };
-
-  push("Comparable sales used", evidence.comparable_count);
-  push("Restricted to the same property type", evidence.comparables_restricted_to_same_type);
-  push("Median comparable (index-adjusted)", evidence.median_index_adjusted_comparable, true);
-  push("Comparable middle 50%", evidence.comparable_price_range, true);
-  push("Median comparable distance", evidence.median_comparable_distance_m
-    ? `${evidence.median_comparable_distance_m} m` : null);
-  push("Search radius", evidence.search_radius_m ? `${evidence.search_radius_m} m` : null);
-  push("Local market movement", evidence.index_adjustment);
-  push("Index level used", evidence.index_adjustment_level);
-  push("Weight given to this property's own past sale", evidence.own_sale_weight);
-  push("Forecast market movement", evidence.forecast_market_movement_pct != null
-    ? `${evidence.forecast_market_movement_pct}%` : null);
-  push("Index movement", evidence.index_movement_pct != null
-    ? `${evidence.index_movement_pct}%` : null);
-  push("Years back-cast", evidence.years_back);
-  push("Basis", evidence.basis);
-  push("Limitation", evidence.limitation);
-  push("Retrospective window", evidence.retrospective_window);
-
-  const reasons = Array.isArray(evidence.confidence_reasons)
-    ? (evidence.confidence_reasons as string[])
-    : [];
-
-  const ownSale = evidence.own_prior_sale as Record<string, unknown> | null | undefined;
-
-  if (rows.length === 0 && reasons.length === 0) return null;
-
-  return (
-    <div className="mt-3">
-      <dl className="space-y-1.5">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex gap-2 text-[12px]">
-            <dt className="min-w-0 flex-1 text-slate-500">{k}</dt>
-            <dd className="max-w-[58%] text-right font-semibold text-slate-800">{v}</dd>
-          </div>
-        ))}
-      </dl>
-
-      {ownSale && (
-        <div className="mt-2.5 rounded-lg bg-slate-50 px-3 py-2 text-[11.5px] leading-relaxed
-                        text-slate-600">
-          <p className="font-semibold text-slate-700">This property&rsquo;s own past sale</p>
-          <p>
-            Sold for {formatFull(Number(ownSale.sold_price), currency)} on{" "}
-            {formatDate(String(ownSale.sold_date))}, which the local index restates as{" "}
-            {formatFull(Number(ownSale.index_adjusted_to_valuation_date), currency)} at the
-            valuation date ({String(ownSale.market_movement_since_sale_pct)}% market movement).
-          </p>
-        </div>
-      )}
-
-      {reasons.length > 0 && (
-        <ul className="mt-2.5 space-y-0.5">
-          {reasons.map((r, i) => (
-            <li key={i} className="flex gap-1.5 text-[11.5px] leading-relaxed text-slate-500">
-              <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-slate-300" />
-              {r}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 function StatCard({
   label,

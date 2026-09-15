@@ -5,8 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import Attribution from "@/components/Attribution";
 import MapControls, {
-  type HeatMetric,
-  type MapMode,
   type Segment,
 } from "@/components/MapControls";
 import PropertyPanel from "@/components/PropertyPanel";
@@ -15,7 +13,6 @@ import StatusBanner from "@/components/StatusBanner";
 import { AbortedError, ApiError, api } from "@/lib/api";
 import type {
   AreaStat,
-  Comparable,
   CoverageResponse,
   DataStatus,
   MapResponse,
@@ -47,8 +44,6 @@ export default function Home() {
   const [flyTo, setFlyTo] = useState<
     { lat: number; lon: number; zoom: number; bbox?: [number, number, number, number] } | null
   >(null);
-  const [mode, setMode] = useState<MapMode>("markers");
-  const [metric, setMetric] = useState<HeatMetric>("median_price");
   const [segment, setSegment] = useState<Segment>("all");
 
   const urlHydrated = useRef(false);
@@ -69,7 +64,6 @@ export default function Home() {
       setFlyTo({ lat, lon, zoom: Number.isFinite(z) ? z : 15 });
     }
     const m = p.get("mode");
-    if (m === "heatmap" || m === "markers") setMode(m);
     const seg = p.get("type") as Segment | null;
     if (seg) setSegment(seg);
     const pid = Number(p.get("property"));
@@ -84,11 +78,10 @@ export default function Home() {
     p.set("lon", view.centre[0].toFixed(5));
     p.set("z", view.zoom.toFixed(1));
     p.set("year", String(year));
-    if (mode !== "markers") p.set("mode", mode);
     if (segment !== "all") p.set("type", segment);
     if (selectedId) p.set("property", String(selectedId));
     window.history.replaceState(null, "", `?${p.toString()}`);
-  }, [view, year, mode, segment, selectedId]);
+  }, [view, year, segment, selectedId]);
 
   /* --- coverage for the current centre ------------------------------------ */
   useEffect(() => {
@@ -167,9 +160,6 @@ export default function Home() {
     setFlyTo({ lat: area.latitude, lon: area.longitude, zoom: 15.6 });
   }, []);
 
-  const onHighlightComparables = useCallback((_comps: Comparable[]) => {
-    // Reserved for drawing comparables on the map; the panel lists them today.
-  }, []);
 
   /* --- timeline bounds come from real coverage, never hard-coded ---------- */
   const minYear = coverage?.min_year ?? THIS_YEAR - 6;
@@ -193,10 +183,8 @@ export default function Home() {
   return (
     <main className="rm-shell">
       <MapCanvas
-        data={mode === "markers" || mode === "heatmap" ? mapData : null}
+        data={mapData}
         year={year}
-        mode={mode}
-        heatmapMetric={metric}
         selectedPropertyId={selectedId}
         flyTo={flyTo}
         onViewChange={onViewChange}
@@ -224,11 +212,7 @@ export default function Home() {
 
         <div className="hidden md:block">
           <MapControls
-            mode={mode}
-            onModeChange={setMode}
-            metric={metric}
-            onMetricChange={setMetric}
-            segment={segment}
+                            segment={segment}
             onSegmentChange={setSegment}
             tier={mapData?.tier ?? null}
             loading={loading}
@@ -259,7 +243,6 @@ export default function Home() {
             year={year}
             onClose={() => setSelectedId(null)}
             onSelectYear={setYear}
-            onHighlightComparables={onHighlightComparables}
           />
         </div>
       )}
@@ -267,11 +250,7 @@ export default function Home() {
       {/* --- mobile controls ------------------------------------------------- */}
       <div className="absolute bottom-3 left-3 z-20 md:hidden">
         <MapControls
-          mode={mode}
-          onModeChange={setMode}
-          metric={metric}
-          onMetricChange={setMetric}
-          segment={segment}
+                  segment={segment}
           onSegmentChange={setSegment}
           tier={mapData?.tier ?? null}
           loading={loading}
