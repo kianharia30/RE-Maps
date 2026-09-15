@@ -51,26 +51,31 @@ individual dwelling.
 
 | Jurisdiction | Figure | Statistic | Areas | Source |
 |---|---|---|---|---|
-| Ireland | € from 630,247 recorded sales | **median** | 26 counties | [Property Price Register](https://propertypriceregister.ie/) |
+| United States | $ home values | **median**, owner-estimated | 3,169 counties + national | [Census ACS B25077](https://www.census.gov/data/developers/data-sets/acs-5year.html) |
+| Ireland | € from 630,247 recorded sales | **median** | 26 counties + national | [Property Price Register](https://propertypriceregister.ie/) |
 | Singapore | S$ from 240,345 resale records | **median** | national | [data.gov.sg HDB resale](https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view) |
+| Australia | A$ dwelling stock value | **mean** | 8 states + national | [ABS RES_DWELL_ST](https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/total-value-dwellings) |
 | Netherlands | € published average | **mean** | 12 provinces + national | [CBS 83625NED](https://opendata.cbs.nl/statline/#/CBS/nl/dataset/83625NED/table) |
 | Sweden | kr published average | **mean** | 21 counties + national | [SCB BO0501](https://www.statistikdatabasen.scb.se/pxweb/en/ssd/START__BO__BO0501/) |
 | Denmark | kr published average | **mean** | 5 regions + national | [Statistics Denmark EJEN77](https://www.statbank.dk/EJEN77) |
 
-The mean/median column is not pedantry. House prices are right-skewed, so a
-mean sits well above a median for the same market — presenting one as the other
-overstates typical prices. Every row records which it is, and each marker is
-labelled `· median` or `· avg` so two countries are never silently compared on
-different measures.
+Three labels appear on markers, and the differences are real:
 
-Each source also has real limits, stated in the registry and returned by the
-API: Singapore covers HDB public housing only (roughly four in five residents,
-but no private condominiums, so it sits below an all-market figure); Sweden
-covers houses but not tenant-owned flats; Denmark covers single-family houses
-in arm's-length sales; Ireland excludes non-market transfers and VAT-exclusive
-new builds.
+- **median** — the middle of prices people actually paid.
+- **avg** — an arithmetic mean published by a statistics office. House prices
+  are right-skewed, so a mean sits well above a median for the same market.
+- **est. value** — US only. The ACS asks owners what they think their home
+  would sell for; it describes the standing stock, not sales, and owner
+  estimates run above market outcomes.
 
-**Everywhere else shows nothing.** Twenty-five further countries publish an
+Each source has limits the API states rather than hides: Singapore is HDB
+public housing only (about four in five residents, no private condominiums);
+Australia is the mean value of the dwelling stock, not transfers; Sweden
+excludes tenant-owned flats, understating city housing; Denmark is
+single-family houses in arm's-length sales; Ireland excludes non-market
+transfers and VAT-exclusive new builds.
+
+**Everywhere else shows nothing.** Twenty-four further countries publish an
 official index, which is held in `market_indices` and used where it is valid,
 but is never rendered as a price. They are registered as uncovered *with the
 reason*, so the API answers:

@@ -377,13 +377,22 @@ async def map_prices(
         # nothing is. The property tier keeps the strict gate, because there
         # the centre really is the subject of the request.
         #
-        # CRITICAL: only when there is no registry row at all. A row that
-        # exists and records an absence — Scotland, Northern Ireland — must
-        # never fall through to this, because the countries in view would
-        # include the UK, and Scotland would be served England and Wales's
-        # median. That is precisely the substitution those rows were written to
-        # prevent, and an earlier version of this fallback did exactly it.
-        if tier is not MapTier.PROPERTY and entry is None:
+        # The guard here is about WHICH KIND of absence has been recorded.
+        #
+        # A SUB-NATIONAL absence (Scotland, Northern Ireland — region_code set)
+        # sits inside a country that does have data, so falling through would
+        # serve Scotland England and Wales's median. That is precisely the
+        # substitution those rows exist to prevent, and an earlier version of
+        # this fallback did exactly it. Those must always refuse.
+        #
+        # A COUNTRY-WIDE absence (Germany, Spain — region_code NULL) is
+        # different: there is no parent dataset to leak from, and a viewport
+        # over Europe centred on Germany still shows the UK, Ireland, the
+        # Netherlands, Sweden and Denmark. Blanking all of them because the
+        # centre pixel fell on an uncovered country is the bug this fallback
+        # was written to fix in the first place.
+        country_wide_absence = entry is not None and entry.region_code is None
+        if tier is not MapTier.PROPERTY and (entry is None or country_wide_absence):
             spanning = await _multi_country_area_tier(
                 box, tier, year, segment, is_future, today
             )

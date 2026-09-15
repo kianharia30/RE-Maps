@@ -107,6 +107,33 @@ def _csv_path(settings) -> Path:
     return csv_path
 
 
+# A national row alongside the counties, computed from the same records rather
+# than by averaging the county medians (a median of medians is not a median).
+# Without it a world-zoom viewport, which asks for a country-level figure,
+# found nothing for Ireland.
+UPSERT_NATIONAL = """
+INSERT INTO area_stats (
+    country_iso2, area_level, area_code, area_name, segment, year,
+    transaction_count, median_price, p25_price, p75_price, currency_code,
+    growth_1y_pct, source_key, basis, price_statistic, geom, computed_at
+)
+SELECT 'IE', 'country', 'IE', 'Ireland', 'all', %(year)s,
+       %(count)s, %(median)s, %(p25)s, %(p75)s, 'EUR',
+       %(growth)s, %(source_key)s, 'TRANSACTIONS', 'MEDIAN',
+       ST_PointOnSurface(geom), now()
+FROM countries WHERE iso2 = 'IE'
+ON CONFLICT (country_iso2, area_level, area_code, segment, year)
+DO UPDATE SET transaction_count = EXCLUDED.transaction_count,
+              median_price = EXCLUDED.median_price,
+              p25_price = EXCLUDED.p25_price,
+              p75_price = EXCLUDED.p75_price,
+              growth_1y_pct = EXCLUDED.growth_1y_pct,
+              basis = EXCLUDED.basis,
+              price_statistic = EXCLUDED.price_statistic,
+              source_key = EXCLUDED.source_key,
+              computed_at = now();
+"""
+
 UPSERT = """
 INSERT INTO area_stats (
     country_iso2, area_level, area_code, area_name, segment, year,
@@ -185,8 +212,41 @@ def ingest() -> dict[str, int]:
             if len(prices) >= MIN_SALES:
                 medians[key] = statistics.median(prices)
 
+        # National figures from the pooled records of every county.
+        national: dict[int, list[float]] = {}
+        for (_, year), prices in buckets.items():
+            national.setdefault(year, []).extend(prices)
+        national_medians = {
+            year: statistics.median(prices)
+            for year, prices in national.items()
+            if len(prices) >= MIN_SALES
+        }
+
         unmatched: set[str] = set()
         with sync_conn() as conn:
+            for year, prices in sorted(national.items()):
+                if len(prices) < MIN_SALES:
+                    continue
+                quartiles = statistics.quantiles(sorted(prices), n=4)
+                prior = national_medians.get(year - 1)
+                median = national_medians[year]
+                growth = (
+                    round((median / prior - 1) * 100, 3)
+                    if prior and prior > 0 else None
+                )
+                with conn.cursor() as cur:
+                    cur.execute(
+                        UPSERT_NATIONAL,
+                        {
+                            "year": year, "count": len(prices),
+                            "median": round(median, 2),
+                            "p25": round(quartiles[0], 2),
+                            "p75": round(quartiles[2], 2),
+                            "growth": growth, "source_key": SOURCE_KEY,
+                        },
+                    )
+                written += 1
+
             for (county, year), prices in sorted(buckets.items()):
                 if len(prices) < MIN_SALES:
                     continue

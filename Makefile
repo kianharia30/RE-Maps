@@ -141,7 +141,7 @@ ingest-uk:  ## HM Land Registry Price Paid Data + UK House Price Index
 	cd backend && .venv/bin/python -m ingest.uk_ppd
 	cd backend && .venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='%(message)s'); from ingest.uk_hpi import link_districts; link_districts()"
 
-ingest-world: ingest-ie ingest-sg ingest-stats-offices ingest-us  ## Everything beyond the UK and France
+ingest-world: ingest-ie ingest-sg ingest-au ingest-stats-offices ingest-us  ## Everything beyond the UK and France
 	@echo "These sources publish an INDEX, not prices: growth only, no price level."
 	cd backend && .venv/bin/python -m ingest.world_stats
 
@@ -159,6 +159,9 @@ ingest-stats-offices:  ## Real average prices from statistics offices (NL, SE, D
 
 ingest-sg:  ## Singapore: real medians from 240k HDB resale records
 	cd backend && .venv/bin/python -m ingest.sg_hdb
+
+ingest-au:  ## Australia: mean dwelling prices by state (ABS)
+	cd backend && .venv/bin/python -m ingest.au_abs
 
 ingest-us:  ## USA: county home values (needs a free CENSUS_API_KEY in backend/.env)
 	@cd backend && .venv/bin/python -m ingest.us_census || \

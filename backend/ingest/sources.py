@@ -301,6 +301,30 @@ SOURCES: list[dict] = [
         "source_published_at": None,
     },
     {
+        "key": "au_abs_res_dwell",
+        "name": "Residential Dwellings: Values, Mean Price and Number by State (RES_DWELL_ST)",
+        "owner": "Australian Bureau of Statistics",
+        "url": "https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/total-value-dwellings",
+        "documentation_url": "https://api.gov.au/abs",
+        "licence": "Creative Commons Attribution 4.0",
+        "licence_url": "https://www.abs.gov.au/website-privacy-copyright-and-disclaimer",
+        "attribution": "Source: Australian Bureau of Statistics, Total Value of Dwellings.",
+        "allowed_use": (
+            "Free re-use with attribution. The figure is the MEAN price of the "
+            "residential dwelling stock (total value divided by number of "
+            "dwellings) — not a median, and not a transaction price: it "
+            "describes what existing housing is worth rather than what changed "
+            "hands. Published in thousands of dollars, and per state and "
+            "territory only. The sibling RES_DWELL dataflow carries true "
+            "transfer medians but publishes them for 'Greater capital' and "
+            "'Rest of state' areas, for which no boundary data is held here."
+        ),
+        "update_frequency": "Quarterly",
+        "geographic_coverage": "Australia, 8 states and territories",
+        "historical_coverage": "2011 onwards",
+        "source_published_at": None,
+    },
+    {
         "key": "natural_earth_admin0",
         "name": "Natural Earth Admin 0 - Countries (10m)",
         "owner": "Natural Earth",

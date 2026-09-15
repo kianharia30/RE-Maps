@@ -177,7 +177,6 @@ class TestUnsupportedLocationsReturnNoPrices:
     # TestStatisticsOnlyCoverage instead, which is stricter.
     UNSUPPORTED = [
         ("Tokyo", 35.6895, 139.6917),
-        ("Sydney", -33.8688, 151.2093),
         ("Mumbai", 19.0760, 72.8777),
         ("Sao Paulo", -23.5505, -46.6333),
         ("Cairo", 30.0444, 31.2357),
@@ -366,6 +365,12 @@ class TestAreaLevelPriceLevels:
         ("Utrecht", 52.0900, 5.1200, "EUR", "MEAN"),
         ("Copenhagen", 55.6761, 12.5683, "DKK", "MEAN"),
         ("Aarhus", 56.1629, 10.2039, "DKK", "MEAN"),
+        ("Stockholm", 59.3293, 18.0686, "SEK", "MEAN"),
+        ("Singapore", 1.3521, 103.8198, "SGD", "MEDIAN"),
+        ("Sydney", -33.8688, 151.2093, "AUD", "MEAN"),
+        ("Melbourne", -37.8136, 144.9631, "AUD", "MEAN"),
+        ("New York", 40.7128, -74.0060, "USD", "MEDIAN"),
+        ("San Francisco", 37.7749, -122.4194, "USD", "MEDIAN"),
     ]
 
     def _areas(self, client, lat, lon, zoom=9, year=2025):
@@ -423,6 +428,17 @@ class TestAreaLevelPriceLevels:
                     f"{name} claims 0 sales behind a real price"
                 )
 
+    def test_us_figures_are_marked_as_owner_estimates_not_sales(self, client):
+        """ACS B25077 is what owners think their home is worth, not a price
+        anyone paid. It must never be presented as a transaction median."""
+        body = self._areas(client, 40.7128, -74.0060, zoom=10)
+        priced = [a for a in body["areas"] if a["median_price"] is not None]
+        assert priced, "no US figures returned"
+        for area in priced:
+            assert area["basis"] == "OWNER_ESTIMATE", (
+                f"{area['area_name']} claims to be a recorded sale"
+            )
+
     @pytest.mark.parametrize("name,lat,lon,currency,statistic", PLACES)
     def test_individual_dwellings_are_still_refused(
         self, client, name, lat, lon, currency, statistic
@@ -446,14 +462,18 @@ class TestCountriesWithoutPricesShowNothing:
     not something this map can present as a price.
     """
 
+    # Countries whose statistics office publishes an index and nothing else.
+    # The United States left this list once the Census key arrived; Spain,
+    # Italy and Norway remain because their open APIs carry indices only, and
+    # Belgium because it publishes no direct open-data file.
     NO_PRICES = [
         ("Berlin", 52.5200, 13.4050),
         ("Madrid", 40.4168, -3.7038),
         ("Rome", 41.9028, 12.4964),
         ("Warsaw", 52.2297, 21.0122),
         ("Lisbon", 38.7223, -9.1393),
-        ("New York", 40.7128, -74.0060),
-        ("Los Angeles", 34.0522, -118.2437),
+        ("Oslo", 59.9139, 10.7522),
+        ("Prague", 50.0755, 14.4378),
     ]
 
     @pytest.mark.parametrize("name,lat,lon", NO_PRICES)
@@ -497,6 +517,68 @@ class TestCountriesWithoutPricesShowNothing:
         ).json()["country_iso2"]
         assert iso not in supported, f"{name} ({iso}) is listed as supported"
         assert iso in absent, f"{name} ({iso}) is missing from known_absences"
+
+
+@pytest.mark.db
+class TestWideViewsFindTheCountriesInThem:
+    """A country-wide absence must not blank its neighbours.
+
+    Two kinds of "no data" behave differently and the difference matters:
+
+      * a SUB-NATIONAL absence (Scotland, Northern Ireland) sits inside a
+        country that does have data, so serving anything would hand it the
+        parent's figures — it must refuse outright;
+      * a COUNTRY-WIDE absence (Germany, Spain) has no parent dataset to leak
+        from, so a European view centred on Germany should still show the UK,
+        Ireland, the Netherlands, Sweden and Denmark.
+    """
+
+    def _get(self, client, bbox, zoom, year=2025):
+        return client.get(
+            "/api/map/prices",
+            params={"bbox": bbox, "zoom": zoom, "year": year},
+        ).json()
+
+    WIDE = [
+        ("Europe centred on Germany", "-11,36,31,62", 4),
+        ("the whole world", "-170,-55,180,72", 2),
+        ("South-East Asia", "95,-10,145,25", 4),
+    ]
+
+    @pytest.mark.parametrize("name,bbox,zoom", WIDE)
+    def test_covered_countries_are_shown(self, client, name, bbox, zoom):
+        body = self._get(client, bbox, zoom)
+        assert body["status"] == "OK", f"{name}: {body.get('message')}"
+        assert body["areas"], f"{name} showed nothing"
+        for area in body["areas"]:
+            assert area["median_price"] is not None
+            assert area["median_price"] > 0
+
+    @pytest.mark.parametrize("name,bbox,zoom", WIDE)
+    def test_uncovered_countries_get_no_marker(self, client, name, bbox, zoom):
+        body = self._get(client, bbox, zoom)
+        shown = {a["area_name"] for a in body["areas"]}
+        for uncovered in ("Germany", "Spain", "Italy", "Poland", "Norway",
+                          "Switzerland", "Indonesia", "Malaysia", "Thailand"):
+            assert uncovered not in shown, (
+                f"{uncovered} has no priced data but received a figure"
+            )
+
+    REGIONAL_ABSENCES = [
+        ("Scotland", "-6,54,0,59", 6),
+        ("Northern Ireland", "-7,52.5,-4,55.5", 6),
+    ]
+
+    @pytest.mark.parametrize("name,bbox,zoom", REGIONAL_ABSENCES)
+    def test_a_region_inside_a_covered_country_still_refuses(
+        self, client, name, bbox, zoom
+    ):
+        """The guard that stops Scotland being served England's median."""
+        body = self._get(client, bbox, zoom)
+        assert body["status"] == "UNSUPPORTED_LOCATION", (
+            f"{name} was served data: {body['areas'][:1]}"
+        )
+        assert body["areas"] == []
 
 
 @pytest.mark.db
@@ -558,7 +640,16 @@ class TestCoverageIsBackedByData:
     """§57.17: a country may only be claimed if real data exists behind it."""
 
     @pytest.mark.asyncio
-    async def test_every_claimed_country_has_transactions_or_an_index(self):
+    async def test_every_claimed_country_has_real_data_behind_it(self):
+        """Coverage may never be claimed without data to back it.
+
+        Evidence comes in three forms and all three count: individual
+        transactions, an official index, or priced area statistics. Australia
+        and Singapore have only the third — no index series and no individual
+        sales in this database — so a check that looked only at the first two
+        would call their coverage unbacked. The production purge had exactly
+        that gap and silently deleted their coverage the moment it was written.
+        """
         from app.db import fetch_one
 
         index = await coverage_mod.index()
@@ -566,13 +657,24 @@ class TestCoverageIsBackedByData:
         for entry in index.supported:
             row = await fetch_one(
                 """
-                SELECT (SELECT count(*) FROM transactions WHERE country_iso2 = %s) AS txns,
-                       (SELECT count(*) FROM market_indices WHERE country_iso2 = %s) AS idx
+                SELECT
+                  (SELECT count(*) FROM transactions
+                     WHERE country_iso2 = %(c)s) AS txns,
+                  (SELECT count(*) FROM market_indices
+                     WHERE country_iso2 = %(c)s) AS idx,
+                  (SELECT count(*) FROM area_stats
+                     WHERE country_iso2 = %(c)s
+                       AND median_price IS NOT NULL) AS priced
                 """,
-                (entry.country_iso2, entry.country_iso2),
+                {"c": entry.country_iso2},
             )
-            assert (row["txns"] or 0) > 0 or (row["idx"] or 0) > 0, (
+            assert (row["txns"] or 0) or (row["idx"] or 0) or (row["priced"] or 0), (
                 f"{entry.country_iso2} is claimed in provider_coverage but has no data"
+            )
+            # Anything the map will actually draw needs a PRICE, not just an
+            # index: an index-only country is registered NONE and shows nothing.
+            assert (row["txns"] or 0) or (row["priced"] or 0), (
+                f"{entry.country_iso2} is supported but has no priced data"
             )
 
     @pytest.mark.asyncio

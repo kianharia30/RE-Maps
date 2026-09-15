@@ -112,6 +112,28 @@ def _fetch(year: int, key: str) -> list[list[str]] | None:
     return json.loads(raw)
 
 
+# A country-level row as well as the counties. Without one, a viewport wide
+# enough to ask for a country figure -- anything at world zoom -- found nothing
+# for the United States and reported no data for a country with 3,168 priced
+# areas in it.
+UPSERT_NATIONAL = """
+INSERT INTO area_stats (
+    country_iso2, area_level, area_code, area_name, segment, year,
+    transaction_count, median_price, currency_code, source_key,
+    basis, price_statistic, geom, computed_at
+)
+SELECT 'US', 'country', 'US', 'United States', 'all', %(year)s,
+       NULL, %(value)s, 'USD', %(source_key)s,
+       'OWNER_ESTIMATE', 'MEDIAN', ST_PointOnSurface(geom), now()
+FROM countries WHERE iso2 = 'US'
+ON CONFLICT (country_iso2, area_level, area_code, segment, year)
+DO UPDATE SET median_price = EXCLUDED.median_price,
+              basis = EXCLUDED.basis,
+              price_statistic = EXCLUDED.price_statistic,
+              source_key = EXCLUDED.source_key,
+              computed_at = now();
+"""
+
 UPSERT = """
 INSERT INTO area_stats (
     country_iso2, area_level, area_code, area_name, segment, year,
@@ -153,6 +175,24 @@ def ingest() -> dict[str, int]:
             raise RuntimeError(
                 f"No ACS 5-year release responded for {CANDIDATE_YEARS}"
             )
+
+        # The national figure, in the same release.
+        national_query = urllib.parse.urlencode({
+            "get": f"NAME,{VALUE_VAR}", "for": "us:*", "key": key,
+        })
+        national_req = urllib.request.Request(
+            f"{BASE}/{year_used}/acs/acs5?{national_query}",
+            headers={"User-Agent": "RE-Maps/0.1 (property price map)"},
+        )
+        national_value: float | None = None
+        try:
+            with urllib.request.urlopen(national_req, timeout=90) as resp:
+                national = json.loads(resp.read())
+            raw = national[1][1]
+            if raw not in NULL_SENTINELS:
+                national_value = float(raw)
+        except (urllib.error.HTTPError, IndexError, ValueError, KeyError) as exc:
+            log.warning("national ACS figure unavailable: %s", exc)
 
         header, *rows = payload
         col = {name: i for i, name in enumerate(header)}
@@ -204,6 +244,18 @@ def ingest() -> dict[str, int]:
                         written += 1
                 if written % 500 == 0 and written:
                     conn.commit()
+            if national_value and national_value > 0:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        UPSERT_NATIONAL,
+                        {
+                            "year": year_used,
+                            "value": round(national_value, 2),
+                            "source_key": SOURCE_KEY,
+                        },
+                    )
+                written += 1
+                log.info("national figure: $%s", f"{national_value:,.0f}")
             with conn.cursor() as cur:
                 cur.execute("ANALYZE area_stats")
             conn.commit()

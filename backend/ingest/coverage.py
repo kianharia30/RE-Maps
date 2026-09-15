@@ -400,6 +400,18 @@ def purge_unbacked() -> int:
                 AND NOT EXISTS (
                     SELECT 1 FROM market_indices m WHERE m.country_iso2 = pc.country_iso2
                 )
+                -- Priced area statistics are the third kind of evidence, and
+                -- for some countries the only kind: Australia and Singapore
+                -- have no index series and no individual sales in this
+                -- database, just real published prices per area. Omitting this
+                -- clause made the safety net delete their coverage the moment
+                -- it was registered, and the country then vanished from the
+                -- map with no error anywhere.
+                AND NOT EXISTS (
+                    SELECT 1 FROM area_stats a
+                    WHERE a.country_iso2 = pc.country_iso2
+                      AND a.median_price IS NOT NULL
+                )
                 """
             )
             removed = cur.rowcount
