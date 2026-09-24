@@ -1,0 +1,54 @@
+MIT License
+
+Copyright (c) 2026 Kian
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+NOTE ON DATA
+
+This licence covers the SOURCE CODE only. It does not and cannot relicense the
+datasets the application ingests, which remain under their publishers' terms.
+No dataset is redistributed in this repository — each is downloaded from its
+publisher at build time by `make data-download`.
+
+Every source, its licence and its required attribution are recorded in
+`backend/ingest/sources.py`, stored in the `data_sources` table, and served by
+the API at `GET /api/sources`. The principal ones are:
+
+  HM Land Registry Price Paid Data   Open Government Licence v3.0
+                                     Contains HM Land Registry data (c) Crown
+                                     copyright and database right. This data is
+                                     licensed under the Open Government Licence
+                                     v3.0.
+  France geo-DVF                     Licence Ouverte 2.0
+  Ireland Property Price Register    CC BY 4.0
+  Statistics Netherlands (CBS)       CC BY 4.0
+  Statistics Sweden (SCB)            CC0 1.0
+  Statistics Denmark                 CC BY 4.0
+  Australian Bureau of Statistics    CC BY 4.0
+  Singapore HDB / data.gov.sg        Singapore Open Data Licence 1.0
+  US Census Bureau / FHFA            Public domain (17 U.S.C. section 105)
+  Eurostat                           Eurostat open data policy
+  Natural Earth                      Public domain
+  OpenStreetMap / Nominatim          ODbL 1.0
+
+Anyone deploying this must keep the attributions the API returns visible in the
+interface, as several of those licences require.

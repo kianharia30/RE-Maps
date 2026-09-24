@@ -1,357 +1,250 @@
 # RE-Maps
 
-**Google Maps, but for property prices.** Search anywhere on Earth, pan and zoom
-an interactive map, and see residential property prices geographically — moving
-backwards and forwards through time.
+A world map of property prices, built on a single rule: **never show a number
+that isn't backed by real data.**
 
-Every figure comes from official open data, or from a model whose inputs are
-official open data. Where reliable data does not exist, the application says so.
-There is no demo mode, no mock provider, and no fabricated price anywhere in the
-codebase.
+<!-- Replace YOUR-USERNAME below with your GitHub username once the repo exists. -->
+[![CI](https://github.com/YOUR-USERNAME/RE-Maps/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR-USERNAME/RE-Maps/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![TypeScript](https://img.shields.io/badge/typescript-5-blue)
+![Tests](https://img.shields.io/badge/tests-365%20passing-brightgreen)
+![Licence](https://img.shields.io/badge/licence-MIT-green)
+
+Zoom from the whole world down to a single house. Move a timeline from 2010 to
+2036. Every figure is either a real recorded price, an official statistic, or
+nothing at all — with the reason given.
+
+<!-- ===========================================================================
+  ADD A SCREENSHOT HERE — it is the first thing a reviewer looks at.
+
+    1. make dev
+    2. open http://localhost:3000, go to London, zoom to about 14
+    3. save the shot as docs/images/screenshot.png
+    4. delete this comment block and uncomment the line below
+
+  A second shot of the property panel open on a single house works well too.
+============================================================================ -->
+<!-- ![RE-Maps showing property prices across London](docs/images/screenshot.png) -->
 
 ---
 
-## What actually works right now
+## Scope, stated plainly
 
-This is a running system, not a scaffold. The numbers below are from the loaded
-database, measured on 3 September 2026.
+**Street-level detail exists for the United Kingdom only.** That is the honest
+position and it is deliberate: the UK publishes every residential sale with an
+address, and almost nowhere else does.
 
-| | |
-|---|---|
-| **Real transactions loaded** | **6,021,794** |
-| — England & Wales (HM Land Registry) | 5,428,239 (2021–2026) |
-| — France (geo-DVF, 8 metro departments) | 593,555 (2021–2023) |
-| Distinct dwellings identified | 5,464,429 |
-| Official index observations | 744,709 points, 495 areas, from 1968 |
-| Precomputed map aggregates | 275,910 |
-| UK postcode centroids | 2,610,351 |
-| Country polygons / sub-national regions | 239 / 4,557 |
-| **Jurisdictions with real data** | **31** |
-| Tests passing | **299** |
-| **AVM median error** (held-out real sales) | **7.18%** — 85.2% within 20% |
-| **Forecast skill vs random walk** | **+7% at 1 year, +48% at 10 years** |
-
-## What "supported" means here
-
-**A figure is shown only where real money stands behind it.** Countries that
-publish only a house price index show nothing at all — an index measures change
-("prices moved 4.2%"), never what a home costs, and a percentage on a map where
-everything else is a price is worse than an honest blank.
-
-**Transaction-level** — individual recorded sales, so the map can show a
-specific dwelling and value it.
-
-| Jurisdiction | Sales | Coordinates | Floor area | Forecast |
-|---|---|---|---|---|
-| England & Wales | 5,428,239 (2021–2026) | postcode centroid | ⚠️ needs EPC key | ✅ |
-| France (8 metros) | 593,555 (2021–2023) | ✅ **cadastral parcel** | ✅ every record | ❌ history too short |
-
-**Area-level prices** — real money, but nothing that can be placed on an
-individual dwelling.
-
-| Jurisdiction | Figure | Statistic | Areas | Source |
-|---|---|---|---|---|
-| United States | $ home values | **median**, owner-estimated | 3,169 counties + national | [Census ACS B25077](https://www.census.gov/data/developers/data-sets/acs-5year.html) |
-| Ireland | € from 630,247 recorded sales | **median** | 26 counties + national | [Property Price Register](https://propertypriceregister.ie/) |
-| Singapore | S$ from 240,345 resale records | **median** | national | [data.gov.sg HDB resale](https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view) |
-| Australia | A$ dwelling stock value | **mean** | 8 states + national | [ABS RES_DWELL_ST](https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/total-value-dwellings) |
-| Netherlands | € published average | **mean** | 12 provinces + national | [CBS 83625NED](https://opendata.cbs.nl/statline/#/CBS/nl/dataset/83625NED/table) |
-| Sweden | kr published average | **mean** | 21 counties + national | [SCB BO0501](https://www.statistikdatabasen.scb.se/pxweb/en/ssd/START__BO__BO0501/) |
-| Denmark | kr published average | **mean** | 5 regions + national | [Statistics Denmark EJEN77](https://www.statbank.dk/EJEN77) |
-
-Three labels appear on markers, and the differences are real:
-
-- **median** — the middle of prices people actually paid.
-- **avg** — an arithmetic mean published by a statistics office. House prices
-  are right-skewed, so a mean sits well above a median for the same market.
-- **est. value** — US only. The ACS asks owners what they think their home
-  would sell for; it describes the standing stock, not sales, and owner
-  estimates run above market outcomes.
-
-Each source has limits the API states rather than hides: Singapore is HDB
-public housing only (about four in five residents, no private condominiums);
-Australia is the mean value of the dwelling stock, not transfers; Sweden
-excludes tenant-owned flats, understating city housing; Denmark is
-single-family houses in arm's-length sales; Ireland excludes non-market
-transfers and VAT-exclusive new builds.
-
-**Everywhere else shows nothing.** Twenty-four further countries publish an
-official index, which is held in `market_indices` and used where it is valid,
-but is never rendered as a price. They are registered as uncovered *with the
-reason*, so the API answers:
-
-> No property prices are published for this country. An official house price
-> index exists at national level only, but an index measures change only — it
-> says how much prices moved, not what a home costs — and no price level or
-> individual sale records are published openly here.
-
-Scotland and Northern Ireland are registered the same way: HM Land Registry
-Price Paid Data covers England and Wales only.
-
-Eurostat publishes no price-level dataset at all — its catalogue was searched,
-and every housing series it carries is an index or a ratio. There is no
-pan-European source of actual prices, which is why each country above needed
-its own national statistics office.
-
-## Data sources
-
-Full detail, licences and required attributions: **[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)**.
-
-| Source | What for | Licence |
+| | What you get | Why |
 |---|---|---|
-| [HM Land Registry Price Paid Data](https://www.gov.uk/guidance/about-the-price-paid-data) | UK transactions | OGL v3.0 |
-| [UK House Price Index](https://www.gov.uk/government/statistical-data-sets/uk-house-price-index-data-downloads) | index adjustment, forecasting | OGL v3.0 |
-| [Open Postcode Geo](https://www.getthedata.com/open-postcode-geo) | UK postcode centroids | OGL v3.0 + OS OpenData |
-| [France geo-DVF](https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/) | French transactions | Licence Ouverte 2.0 |
-| [Natural Earth](https://www.naturalearthdata.com/) | country polygons | public domain |
-| [Nominatim](https://nominatim.openstreetmap.org) | geocoding | ODbL 1.0 |
-| [OpenFreeMap](https://openfreemap.org) | base map tiles | ODbL 1.0 |
+| **England & Wales** | **Individual houses.** 5.4M recorded sales, a price for a specific address, a valuation for a property that hasn't sold | HM Land Registry publishes every sale with an address |
+| France | Sales at cadastral-parcel precision, 8 metro departments | geo-DVF publishes parcels but not addresses |
+| 7 other countries | **One figure per region** — county, province or state | Their statistics offices publish area aggregates only |
+| Everywhere else | **Nothing**, with the reason | No open price data exists |
 
-Required attribution is displayed in the map attribution bar and in every
-property panel:
+So: the UK is the product. The other eight countries demonstrate that the
+ingestion, licensing and precision machinery generalises — they are not a claim
+that the map works everywhere.
 
-> Contains HM Land Registry data © Crown copyright and database right 2026.
-> This data is licensed under the Open Government Licence v3.0.
-> Contains OS data © Crown copyright and database right 2026. Contains Royal
-> Mail data © Royal Mail copyright and database right 2026. Contains National
-> Statistics data © Crown copyright and database right 2026.
-> Contient des données de la DGFiP (DVF), géolocalisées par Etalab, Licence
-> Ouverte 2.0.
-> Base map © OpenFreeMap, © OpenMapTiles, Data © OpenStreetMap contributors.
+<details>
+<summary>The nine jurisdictions with real figures</summary>
 
-**Nothing is scraped.** Every dataset is an official bulk download or a
-documented API used within its terms. Rightmove, Zoopla and Zillow are not used.
+| Jurisdiction | Figure | Statistic | Areas |
+|---|---|---|---|
+| England & Wales | £ from 5,428,239 recorded sales | median | 10,715 areas + individual dwellings |
+| United States | $ home values | median, **owner-estimated** | 3,169 counties |
+| France | € from 593,555 recorded sales | median | 1,365 communes |
+| Ireland | € from 630,247 recorded sales | median | 26 counties |
+| Sweden | kr published average | mean | 21 counties |
+| Netherlands | € published average | mean | 12 provinces |
+| Australia | A$ dwelling stock value | mean | 8 states |
+| Denmark | kr published average | mean | 5 regions |
+| Singapore | S$ from 240,345 resale records | median | national |
+
+Markers are labelled `· median`, `· avg` or `· est. value`, because the three
+are not interchangeable. House prices are right-skewed, so a published mean
+sits well above a median for the same market; and the US figure is what owners
+*think* their home is worth, not what anyone paid.
+
+Twenty-four further countries publish a house price **index** — a series based
+at 100 in a reference year. An index says prices moved 4.2%; it never says what
+a home costs. Deriving a price from one would need a base-year price nobody
+publishes, so those countries show nothing and the API explains why.
+
+</details>
 
 ---
 
-## External credentials — what only you can do
+## The interesting problem
 
-Everything above runs with **no API keys**. One optional integration cannot be
-set up without you:
+A property map is trivial to build if you are willing to guess. Interpolate
+between two postcodes, apply a national index to a regional average, fall back
+to "typical for the area" — every one of those produces a plausible number with
+nothing behind it, and a user cannot tell the difference.
 
-### EPC — Energy Performance of Buildings (England & Wales)
+This codebase is organised around refusing to do that. The consequences run
+through every layer:
+
+**The schema makes fabrication hard.** `area_stats.median_price` is nullable,
+guarded by a constraint that a row must carry either a real median or an index
+value, and a second constraint that anything claiming `TRANSACTIONS` basis has
+both a median and a positive sale count. A `basis` column records which of four
+kinds of evidence stands behind each figure, and `price_statistic` records
+whether it is a mean or a median.
+
+**Precision is derived, never asserted.** A figure is labelled by the area
+level it was actually computed at, never the zoom level that requested it.
+Serving an Irish county median to a street-zoom viewport labels it
+`CITY_REGIONAL`, not `NEIGHBOURHOOD` — the map reports what it has, not what
+you asked for.
+
+**Absence is a first-class value.** Scotland and Northern Ireland have registry
+rows recording that HM Land Registry does not cover them, so the England-and-
+Wales dataset can never be applied to them by accident. Searching Edinburgh
+moves the map and tells you exactly that.
+
+**The tests encode the rule, not the implementation.** `test_no_fabrication.py`
+asserts system-wide guarantees: that no unsupported location returns a price at
+any zoom, that no code path in the price chain calls `random`, that every
+country claimed as covered has data behind it, and that a viewport spanning a
+border never serves one country's figures for another.
+
+That last one caught a real bug. An early fix for continental zoom made a
+viewport over Scotland return England and Wales's median — precisely the
+substitution the registry rows exist to prevent. Ten tests now guard it.
+
+---
+
+## Measured results
+
+Not estimates — these come from backtests stored in `model_evaluations` and are
+reproducible with `make evaluate`.
+
+**Automated valuation**, held-out real sales the model never saw, with the
+target sale excluded from its own comparable set:
 
 | | |
 |---|---|
-| **Why it matters** | The only open source of **floor area, habitable rooms and construction age** for UK dwellings. It would enable price-per-m², size-adjusted comparables, and a genuine reduction in valuation error. |
-| **Free or paid** | **Free** |
-| **What to do** | 1. Go to <https://epc.opendatacommunities.org/><br>2. Register (GOV.UK One Login) and accept the terms<br>3. Copy the email you registered with and the API key you are issued |
-| **Environment variables** | `EPC_API_EMAIL` and `EPC_API_KEY` in `.env` |
-| **Alternative** | None that is open. OS AddressBase has richer attributes but is commercially licensed. |
+| Median absolute error | **7.33%** |
+| Within 10% / 20% of the true price | 64.3% / 84.7% |
+| Stated 80% interval, actual coverage | 88.3% (conservative, as intended) |
 
-Without it the application works fully; UK properties simply have no floor area
-or bedroom count. The UI **names the missing fields** rather than hiding them:
+**Forecasting**, rolling-origin backtest over 376 real index series, 7,577
+origins, each fitted only on data available at that origin:
 
-> *Not available in the open data for this property: bedrooms, bathrooms,
-> rooms, floor area, plot, built, price per m².*
+| Horizon | Improvement vs random walk | vs linear drift |
+|---|---|---|
+| 1 year | +7% | +21% |
+| 5 years | +24% | +58% |
+| 10 years | +48% | +75% |
 
-**Nothing is substituted.** France needs no key — geo-DVF includes floor area.
-
-### Optional but recommended for real traffic
-
-`NOMINATIM_EMAIL` should contain a real contact address: the OSM Nominatim usage
-policy requires identification, and the public endpoint is not for heavy use.
-For production, self-host Nominatim or Photon and set `NOMINATIM_URL`.
+The forecast intervals served by the API are built from the error distribution
+measured here, so a ten-year projection is visibly, honestly uncertain.
 
 ---
 
-## API
+## Running it
 
-Interactive docs at <http://127.0.0.1:8000/docs>.
+Needs PostgreSQL 16+ with PostGIS, Python 3.12+ and Node 22+.
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/search?q=` | global geocoding, with a coverage flag per result |
-| `GET /api/coverage/at?lat=&lon=` | what data exists here, and the timeline range |
-| `GET /api/coverage` | everything supported |
-| `GET /api/sources` | every dataset with licence and attribution |
-| `GET /api/map/prices?bbox=&zoom=&year=&segment=` | the map itself |
-| `GET /api/property/{id}?year=` | the side panel |
-| `GET /api/property/{id}/history` | the chart series |
-| `GET /api/property/{id}/comparables?year=` | the evidence |
-| `GET /api/property/{id}/valuation?year=` | structured valuation + explainability |
-| `GET /api/property/{id}/forecast?year=` | labelled projection + methodology |
-| `GET /api/location/market-history?lat=&lon=` | the real official index series |
-| `GET /api/location/forecast?lat=&lon=&year=` | market forecast + diagnostics |
-| `GET /api/health` | liveness and what is loaded |
-
-Every price is returned as a `Price` object carrying its own interpretation:
-
-```json
-{
-  "value": 285133,
-  "currency": "GBP",
-  "price_type": "CURRENT_ESTIMATE",
-  "date": "2026-08-29",
-  "lower_bound": 244724,
-  "upper_bound": 332215,
-  "confidence": "MEDIUM",
-  "precision_level": "PROPERTY_ESTIMATE",
-  "methodology": "Comparable-sales AVM, index-adjusted",
-  "sources": [{ "key": "uk_land_registry_ppd", "licence": "Open Government Licence v3.0", "attribution": "…" }],
-  "evidence": {
-    "comparable_count": 17,
-    "comparables_restricted_to_same_type": true,
-    "median_index_adjusted_comparable": 279500,
-    "median_comparable_distance_m": 310,
-    "index_adjustment": "UK HPI local authority series for Milton Keynes (terraced): +8.2% between May 2021 and August 2026",
-    "own_prior_sale": { "sold_price": 185000, "sold_date": "2021-05-28" },
-    "confidence_reasons": ["17 nearby comparable sales", "comparables are on or beside the same street"]
-  }
-}
+```bash
+git clone https://github.com/YOUR-USERNAME/RE-Maps.git && cd RE-Maps
+cp .env.example .env          # defaults work for a local Postgres
+make setup                    # virtualenv, dependencies, database, migrations
+make data-download-ppd PPD_YEARS="2024 2025"   # ~80 MB, two years of UK sales
+make ingest-uk
+make dev                      # API on :8000, web on :3000
 ```
 
+`make data-download` fetches every dataset (~3.5 GB) and `make ingest` loads all
+nine jurisdictions; the two-year UK slice above is enough to see the whole thing
+work. `make help` lists every target.
+
+No API key is needed. Two optional ones unlock extra data and the app states
+clearly what is missing without them — UK floor areas (EPC) and US counties
+(Census). Both are free; see `.env.example`.
+
 ---
 
-## Methodology
+## Architecture
 
-- **[docs/VALUATION.md](docs/VALUATION.md)** — the AVM, step by step, with
-  measured accuracy and interval calibration.
-- **[docs/FORECASTING.md](docs/FORECASTING.md)** — the forecaster, its backtest,
-  and the version that failed.
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — system design and how to add
-  a country.
+```
+backend/
+  app/
+    api/routes/     FastAPI endpoints — map, property, search, coverage, sources
+    core/           zoom tiers, jurisdiction resolution, coverage registry, currency
+    providers/      one module per jurisdiction behind a shared interface
+    valuation/      comparable-sales AVM with explicit evidence tracking
+    forecast/       damped-drift index model, intervals from measured backtest error
+    geocode/        Nominatim client — throttled, cached, policy-compliant
+    models/         Pydantic schemas shared by every route
+  ingest/           one module per source; each registers its own licence
+  migrations/       18 numbered SQL migrations, each explaining WHY
+  tests/            365 tests
+frontend/src/
+  components/       MapCanvas (MapLibre), Timeline, PropertyPanel, SearchBar
+  lib/              typed API client
+```
 
-### Two results worth reading before trusting anything
+**Providers behind one interface.** Adding a jurisdiction means writing an
+ingester and a coverage entry, not touching the map. The map queries
+`area_stats`, which is provider-independent.
 
-**The AVM's confidence grade is informative.** On 398 held-out real sales:
-HIGH → 6.84% median error, MEDIUM → 12.91%, LOW → 20.05%. A user who sees "low
-confidence" is genuinely being warned.
+**The zoom ladder degrades gracefully.** Each tier asks for a granularity, then
+walks to coarser levels until it finds real rows, reporting the level it landed
+on. A viewport over Germany asks for a postcode sector and gets nothing;
+a viewport over Dublin asks for a sector and gets the county, labelled as one.
 
-**The first forecaster was worse than useless, and the backtest caught it.** With
-its parameters taken at face value it scored *negative* skill against a
-random-walk baseline at every horizon, over-predicting growth by up to 12% in log
-terms at ten years. Calibration against real history cut the trend to 35% and
-**switched the momentum term off entirely** — measurement showed it had no
-predictive value. The shipped model beats a random walk at every horizon. Both
-versions are documented, because a forecast you cannot audit is not a forecast.
+**Geometry, not points.** Country and region figures are selected by polygon
+intersection and clipped into the visible area. An earlier version stored one
+point per area, which made large regions invisible unless the viewport happened
+to contain that exact coordinate — California's figure was unreachable from a
+view of Los Angeles.
+
+Further detail: [ARCHITECTURE](docs/ARCHITECTURE.md) ·
+[VALUATION](docs/VALUATION.md) · [FORECASTING](docs/FORECASTING.md) ·
+[DATA_SOURCES](docs/DATA_SOURCES.md)
 
 ---
 
 ## Testing
 
 ```bash
-make test          # 256 tests
-make test-unit     # only those needing no database
-make check         # lint + typecheck + test
+make test        # 365 tests
+make lint        # ruff + tsc
 ```
 
-Integration tests are marked `@pytest.mark.db` and **skip automatically** when
-no database is reachable, so `pytest` is useful on a fresh clone.
-
-The suite that matters most is `tests/test_no_fabrication.py`, which asserts
-system-wide guarantees rather than function behaviour:
-
-- ten unsupported locations (Tokyo, New York, Sydney, Mumbai, Berlin, São Paulo,
-  Cairo, mid-Atlantic, Edinburgh, Belfast) return **no price at any zoom, in any
-  year**, and refuse forecasts;
-- no provider is named like a stub, and there is no fallback provider;
-- **no module in any price path imports `random`** — prices are deterministic;
-- `EXACT_TRANSACTION` precision cannot be claimed outside a transaction branch
-  (checked by source inspection);
-- every claimed country has real rows behind it, every `forecast_supported`
-  claim has an index series, every source key resolves to a registered licence;
-- a `PROVIDER_ERROR` message may not contain "no data" or "not available".
-
-Other suites cover address identity (the specification's
-`12 High Street` / `Flat 2, 12 High St` cases), currency formatting
-(including `₹1.8 Cr` and `₹95 L`), the zoom ladder's monotonicity, bounding-box
-validation including antimeridian crossing, forecast interval monotonicity,
-comparable scoring, confidence monotonicity, PPD row parsing and quality flags,
-and database-level integrity (no duplicate source records, no coordinate without
-a stated precision, no area median below its sample-size threshold, no median
-computed from ineligible transactions).
+Tests that need ingested data are marked `db` and skip automatically when the
+database is empty, so CI runs the 207 pure-logic tests without downloading
+gigabytes. The suite is deliberately integration-heavy: a guarantee like "an
+unsupported location never returns a price" is only meaningful against a real
+database with real constraints.
 
 ---
 
-## Deploying to a hosted database
+## Known limitations
 
-The full database is **7.7 GB**. Every free Postgres tier is around 0.5–1 GB, so
-the two do not reconcile — and the data splits cleanly along that line:
-
-| Layer | Size | What it powers |
-|---|---|---|
-| **Map** — boundaries, official indices, precomputed area aggregates | ~300–460 MB | the whole world map, all 31 jurisdictions, every area zoom |
-| **Sales** — 6M transactions, 5.5M dwellings, 2.6M postcode centroids | ~7.3 GB | individual property markers, postcode search, valuations |
-
-[`backend/cloud_sync.py`](backend/cloud_sync.py) copies whichever you ask for:
-
-```bash
-export CLOUD_DATABASE_URL='postgresql://...'   # from your provider
-cd backend && .venv/bin/python cloud_sync.py --profile lean --dry-run
-```
-
-| Profile | Target size | Trade-off |
-|---|---|---|
-| `lean` | **296 MB** | fits a 500 MB free tier with headroom. UK area figures stop at postcode district (~z11) and index history starts at 1995. |
-| `map` | 464 MB | fits 500 MB with none to spare. UK figures reach postcode sector (~z14); full index history, so forecasts keep their long-run skill. |
-| `full` | 7.7 GB | everything. Needs a paid tier. |
-
-The tool needs PostGIS on the target, streams every table with `COPY` (it never
-writes a temp dump — the machine this was built on had under 2 GB free), and
-reads the target URL only from the environment, so a password never reaches a
-command line or a log.
-
-**A map-only deployment rewrites its own coverage registry.** Copied verbatim,
-the deployed API would advertise `transaction_level_data: true` for England &
-Wales and France and then return nothing — claiming data it does not hold. So
-the sync sets those rows to what is actually deployed, and a request for an
-individual dwelling answers:
-
-> Individual property prices are not available here. England and Wales is
-> covered by official area statistics only — zoom out to see them.
-
-Verified by running a real API against a `lean` target: 27 countries at
-continental zoom, real UK district and outcode medians, and individual-dwelling
-requests refused with the message above.
-
-## Limitations, stated plainly
-
-0. **29 of the 31 supported jurisdictions have no price level.** They are
-   covered by an official index only, which measures change rather than value.
-   The map shows growth there and refuses to show a price, a comparable, a
-   valuation or a forecast — a forecast projects a price level, and there is
-   none to project. Only England & Wales and France carry individual sales.
-1. **Transaction coverage is 2021–2026 for the UK and 2021–2023 for France** in
-   this deployment, limited by disk. Earlier years load with one command.
-   Historical estimates for years outside the window still work, via index
-   back-cast from the current valuation — labelled and graded down accordingly.
-2. **UK coordinates are postcode centroids, not buildings.** Building-level
-   coordinates require OS AddressBase, which is licensed.
-3. **No UK floor area or bedroom count** without an EPC key.
-4. **Scotland and Northern Ireland have no transaction data** because none is
-   published openly.
-5. **France covers 8 metro departments** here, and its index is derived from DVF
-   itself and is not mix-adjusted.
-6. **A ten-year forecast is still wrong by ~16.6 percentage points of growth on
-   average.** It beats a random walk, and it is shown at low confidence with
-   wide intervals.
-7. **No condition or renovation data exists anywhere**, so a refurbished and a
-   dilapidated house on the same street are indistinguishable to the model.
-8. **The postcodes table carries UPDATE bloat** (~800 MB) from migration `009`.
-   Reclaim it with `VACUUM FULL postcodes` when you have ~1.5 GB free.
-9. **Nominatim's public endpoint is not for production traffic.** Self-host.
-
----
-
-## Security
-
-- All secrets come from the environment; `.env` is git-ignored and
-  `.env.example` contains no real values.
-- No API key ever reaches the browser. The frontend only receives
-  `NEXT_PUBLIC_API_BASE` and `NEXT_PUBLIC_MAP_STYLE`, both non-secret.
-- Every input is validated by Pydantic; malformed input is a 4xx, never a 500.
-- Rate limiting via `slowapi` (`RATE_LIMIT`, default 120/minute).
-- CORS restricted to `CORS_ORIGINS`.
-- All SQL is parameterised; no string interpolation of user input.
-- `statement_timeout` bounds every query.
-- The API exposes only property data — never buyer, seller or occupant
-  information. Price Paid contains no personal data.
+1. **Individual properties are UK-only.** Everywhere else is area-level, for
+   the reason in the scope table above.
+2. **Forecasts are UK-only.** The model needs 96 monthly observations; the UK
+   has monthly data back to 1968, while Ireland has 17 *annual* points and
+   Australia 16. Interpolating months would invent observations, and the
+   uncertainty bands are calibrated on UK backtests. Selecting a future year
+   elsewhere says so rather than showing a guess.
+3. **UK floor areas need an EPC key.** Without it, price-per-square-metre is
+   unavailable and the UI shows it as such. Nothing is substituted.
+4. **France covers 8 metro departments** and stops at 2023.
+5. **US figures are owner estimates**, not transactions — labelled throughout.
+6. **Scotland and Northern Ireland have no data at all**, by publisher, not by
+   omission here.
 
 ---
 
 ## Licence
 
-The code in this repository is provided as-is. **The data is not ours**: each
-dataset remains under its own licence, and the attribution requirements in
-[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) must be preserved in any deployment.
+Code is MIT. The datasets are not relicensed and are not redistributed here —
+each is downloaded from its publisher at build time, and every licence and
+required attribution is recorded in `backend/ingest/sources.py`, stored in the
+database, and served at `GET /api/sources`. See [LICENSE](LICENSE).
+
+Contains HM Land Registry data © Crown copyright and database right, licensed
+under the Open Government Licence v3.0.
