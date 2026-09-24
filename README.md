@@ -37,7 +37,7 @@ sudo apt install postgresql-16 postgresql-16-postgis-3 python3.12-venv nodejs np
 ### 2. Set the project up
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/RE-Maps.git
+git clone https://github.com/kianharia30/RE-Maps.git
 cd RE-Maps
 cp .env.example .env        # the defaults work for a local Postgres
 make setup                  # Python venv + pip install + npm install
