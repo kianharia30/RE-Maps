@@ -81,7 +81,6 @@ export default function PropertyPanel({
   }, [onClose]);
 
   const price = detail?.selected_year_price ?? null;
-  const currency = price?.currency ?? detail?.current_estimate?.currency ?? "GBP";
 
   return (
     <aside

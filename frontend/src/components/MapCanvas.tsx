@@ -165,10 +165,13 @@ export default function MapCanvas({
     // browsers that fire no observer callback for the first measurement.
     requestAnimationFrame(() => map.resize());
 
+    // Captured now, not read in the closure: by the time cleanup runs the ref
+    // may point at a different Map instance.
+    const markers = markersRef.current;
     return () => {
       observer.disconnect();
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current.clear();
+      markers.forEach((m) => m.remove());
+      markers.clear();
       map.remove();
       mapRef.current = null;
       readyRef.current = false;

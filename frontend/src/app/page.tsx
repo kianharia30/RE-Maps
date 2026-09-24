@@ -63,7 +63,6 @@ export default function Home() {
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
       setFlyTo({ lat, lon, zoom: Number.isFinite(z) ? z : 15 });
     }
-    const m = p.get("mode");
     const seg = p.get("type") as Segment | null;
     if (seg) setSegment(seg);
     const pid = Number(p.get("property"));
@@ -83,13 +82,24 @@ export default function Home() {
     window.history.replaceState(null, "", `?${p.toString()}`);
   }, [view, year, segment, selectedId]);
 
+  // Coverage is a property of the country under the centre, so it only needs
+  // re-requesting when the centre moves far enough to plausibly cross a border.
+  // Rounding to 0.1 degrees (about 11 km) is the trigger; the request itself
+  // uses the exact centre, read through a ref so that panning a few pixels does
+  // not re-run this effect.
+  const coarseLon = view ? view.centre[0].toFixed(1) : null;
+  const coarseLat = view ? view.centre[1].toFixed(1) : null;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
   /* --- coverage for the current centre ------------------------------------ */
   useEffect(() => {
-    if (!view) return;
+    const current = viewRef.current;
+    if (!current) return;
     let cancelled = false;
     (async () => {
       try {
-        const c = await api.coverageAt(view.centre[1], view.centre[0]);
+        const c = await api.coverageAt(current.centre[1], current.centre[0]);
         if (!cancelled) setCoverage(c);
       } catch (err) {
         if (err instanceof AbortedError) return;
@@ -100,8 +110,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-    // Re-fetch only when the centre moves enough to plausibly change country.
-  }, [view?.centre[0].toFixed(1), view?.centre[1].toFixed(1)]);
+  }, [coarseLon, coarseLat]);
 
   /* --- the map data request, debounced ----------------------------------- */
   const load = useCallback(
